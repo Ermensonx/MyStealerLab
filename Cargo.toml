@@ -9,9 +9,10 @@ license = "MIT"
 
 [features]
 default = ["lab-mode"]
-lab-mode = []  # Ativa verificações de segurança obrigatórias
-release = []   # Remove verificações (NUNCA usar fora do lab)
-hydra = []     # Ativa sistema de redundância de processos
+lab-mode = []       # Ativa verificações de segurança obrigatórias
+release = []        # Remove verificações (NUNCA usar fora do lab)
+hydra = []          # Ativa sistema de redundância de processos
+hydra-auto = []     # Ativa Hydra automaticamente (sem precisar de --hydra)
 
 [dependencies]
 # Async runtime

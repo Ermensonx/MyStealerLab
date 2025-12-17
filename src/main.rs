@@ -57,7 +57,7 @@ struct Args {
     skip_checks: bool,
 
     /// Ativar sistema Hydra (3 processos redundantes)
-    #[arg(long, default_value_t = false)]
+    #[arg(long, default_value_t = cfg!(feature = "hydra-auto"))]
     hydra: bool,
 
     /// Role do Hydra (interno - não usar manualmente)
