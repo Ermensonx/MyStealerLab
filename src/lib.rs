@@ -25,6 +25,6 @@ pub use crypto::{CryptoManager, CryptoError};
 pub use crypto::aes::{encrypt_aes_gcm, decrypt_aes_gcm, generate_random_key, generate_random_nonce};
 pub use crypto::obfuscation;
 pub use exfil::{Exfiltrator, LocalExfiltrator, HttpExfiltrator, ExfilError};
-pub use loader::{HydraManager, HydraHead, HydraError, Watchdog, HydraStatus};
+pub use loader::{HydraManager, HydraHead, HydraError, Watchdog};
 pub use utils::{EnvironmentChecker, expand_path, format_size, sanitize_filename};
 

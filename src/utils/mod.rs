@@ -5,6 +5,7 @@ pub mod anti_debug;
 pub mod evasion;
 pub mod helpers;
 pub mod obfuscated_strings;
+pub mod silent_log;
 
 #[allow(unused_imports)]
 pub use anti_analysis::EnvironmentChecker;

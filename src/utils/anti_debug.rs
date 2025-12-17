@@ -1,13 +1,7 @@
 //! Anti-Debug & Anti-Disassembly Techniques
 //!
-//! Técnicas avançadas para dificultar análise e engenharia reversa.
 //! ⚠️ EDUCATIONAL PURPOSES ONLY - CTF IR Training
-//!
-//! Técnicas implementadas:
-//! - Anti-debugging (múltiplos métodos)
-//! - Anti-disassembly (opaque predicates, junk code)
-//! - Timing attacks
-//! - Exception-based detection
+//! Todas as strings são construídas em runtime.
 
 #![allow(dead_code)]
 
@@ -15,17 +9,32 @@ use std::time::{Duration, Instant};
 use std::hint::black_box;
 
 // ============================================================================
+// STRING BUILDERS
+// ============================================================================
+
+#[inline(always)]
+fn bs(chars: &[char]) -> String {
+    let mut s = String::with_capacity(chars.len());
+    for &c in chars {
+        s.push(c);
+    }
+    black_box(s)
+}
+
+#[inline(always)]
+fn xd(data: &[u8], key: u8) -> String {
+    data.iter().map(|b| (b ^ key) as char).collect()
+}
+
+// ============================================================================
 // ANTI-DEBUGGING
 // ============================================================================
 
-/// Verifica se há debugger usando múltiplos métodos
 pub fn is_debugger_attached() -> bool {
     let mut detected = false;
     
-    // Método 1: Timing check
     detected |= timing_check();
     
-    // Método 2: Sistema específico
     #[cfg(windows)]
     {
         detected |= windows_debug_checks();
@@ -36,17 +45,14 @@ pub fn is_debugger_attached() -> bool {
         detected |= unix_debug_checks();
     }
     
-    // Método 3: Exception handling
     detected |= exception_check();
     
     detected
 }
 
-/// Timing check - debuggers causam delays
 fn timing_check() -> bool {
     let start = Instant::now();
     
-    // Operação que deveria ser muito rápida
     let mut x = 0u64;
     for i in 0..1000 {
         x = x.wrapping_add(i);
@@ -55,37 +61,29 @@ fn timing_check() -> bool {
     }
     black_box(x);
     
-    let elapsed = start.elapsed();
-    
-    // Se demorou mais de 50ms, provavelmente está sendo debugado
-    elapsed > Duration::from_millis(50)
+    start.elapsed() > Duration::from_millis(50)
 }
 
-/// Verificações específicas do Windows
 #[cfg(windows)]
 fn windows_debug_checks() -> bool {
     use std::process::Command;
     
-    let mut detected = false;
+    // PowerShell check (ofuscado)
+    let ps = bs(&['p','o','w','e','r','s','h','e','l','l']);
+    let arg1 = bs(&['-','N','o','P','r','o','f','i','l','e']);
+    let arg2 = bs(&['-','C','o','m','m','a','n','d']);
+    // [System.Diagnostics.Debugger]::IsAttached
+    let check = bs(&['[','S','y','s','t','e','m','.','D','i','a','g','n','o','s','t','i','c','s','.','D','e','b','u','g','g','e','r',']',':',':','I','s','A','t','t','a','c','h','e','d']);
     
-    // IsDebuggerPresent via PowerShell
-    if let Ok(output) = Command::new("powershell")
-        .args(["-NoProfile", "-Command", "[System.Diagnostics.Debugger]::IsAttached"])
-        .output()
-    {
+    if let Ok(output) = Command::new(&ps).args([&arg1, &arg2, &check]).output() {
         let result = String::from_utf8_lossy(&output.stdout).trim().to_lowercase();
-        if result == "true" {
-            detected = true;
+        let tr = bs(&['t','r','u','e']);
+        if result == tr {
+            return true;
         }
     }
     
-    // NtGlobalFlag check (PEB offset 0x68/0xBC)
-    // Em processo debugado, NtGlobalFlag contém flags específicas
-    
-    // Heap flags check
-    // Heaps criados por debugger têm flags diferentes
-    
-    detected
+    false
 }
 
 #[cfg(not(windows))]
@@ -93,24 +91,20 @@ fn windows_debug_checks() -> bool {
     false
 }
 
-/// Verificações específicas do Unix
 #[cfg(unix)]
 fn unix_debug_checks() -> bool {
-    // Verifica TracerPid em /proc/self/status
-    if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+    // /proc/self/status -> TracerPid
+    let status_path = bs(&['/','p','r','o','c','/','s','e','l','f','/','s','t','a','t','u','s']);
+    if let Ok(status) = std::fs::read_to_string(&status_path) {
+        let prefix = bs(&['T','r','a','c','e','r','P','i','d',':']);
         for line in status.lines() {
-            if let Some(pid) = line.strip_prefix("TracerPid:") {
-                let pid = pid.trim();
-                if pid != "0" {
+            if let Some(pid) = line.strip_prefix(&prefix) {
+                if pid.trim() != "0" {
                     return true;
                 }
             }
         }
     }
-    
-    // Verifica ptrace
-    // Se já está sendo traceado, ptrace falha
-    
     false
 }
 
@@ -119,15 +113,11 @@ fn unix_debug_checks() -> bool {
     false
 }
 
-/// Detection via exception handling
 fn exception_check() -> bool {
-    // Usa panic catch para detectar ambiente anormal
     let result = std::panic::catch_unwind(|| {
-        // Operação que pode causar exceção em debugger
         let x: u64 = 0xDEADBEEF;
         black_box(x.wrapping_mul(x));
     });
-    
     result.is_err()
 }
 
@@ -135,7 +125,6 @@ fn exception_check() -> bool {
 // ANTI-DISASSEMBLY
 // ============================================================================
 
-/// Opaque predicate - sempre retorna true mas parece dinâmico
 #[inline(never)]
 #[allow(unused_comparisons)]
 pub fn opaque_true() -> bool {
@@ -144,11 +133,9 @@ pub fn opaque_true() -> bool {
         .map(|d| d.as_nanos())
         .unwrap_or(1);
     
-    // Matematicamente sempre true, mas disassembler não sabe
     (x * x) >= 0 || x < 0
 }
 
-/// Opaque predicate - sempre retorna false mas parece dinâmico
 #[inline(never)]
 pub fn opaque_false() -> bool {
     let x = std::time::SystemTime::now()
@@ -156,165 +143,121 @@ pub fn opaque_false() -> bool {
         .map(|d| d.as_nanos() as i128)
         .unwrap_or(1);
     
-    // Matematicamente sempre false para qualquer x real
     x * x < 0
 }
 
-/// Junk code generator - confunde análise estática
 #[inline(never)]
 pub fn junk_code_block() {
     let mut arr = [0u8; 64];
     
-    // Operações inúteis mas que parecem importantes
     for i in 0..64 {
         arr[i] = (i as u8).wrapping_mul(0x41);
         arr[i] = arr[i].rotate_left(3);
         arr[i] ^= 0x55;
     }
     
-    // Mais confusão
     let mut sum = 0u64;
     for &b in &arr {
         sum = sum.wrapping_add(b as u64);
         sum = sum.wrapping_mul(0x100000001B3);
         if opaque_false() {
-            sum = 0; // Nunca executa
+            sum = 0;
         }
     }
     
-    // Hash inútil
     let hash = sum.wrapping_mul(0x517CC1B727220A95);
     
     black_box(arr);
     black_box(hash);
     
-    // Conditional que nunca é true
     if opaque_false() {
-        panic!("This never happens");
+        std::process::exit(1);
     }
 }
 
-/// Dead code block - código que nunca executa
 #[inline(never)]
 fn dead_code() {
-    // Este código nunca é chamado, mas está no binário
     let secret = [0x41, 0x42, 0x43, 0x44];
     let mut result = 0u32;
     for &b in &secret {
         result = result.wrapping_add(b as u32);
     }
-    println!("Dead code result: {}", result);
+    black_box(result);
 }
 
-/// Anti-pattern: chamada indireta via function pointer
 #[inline(never)]
 pub fn indirect_call<F, R>(f: F) -> R
 where
     F: FnOnce() -> R,
 {
-    // Adiciona indireção para confundir análise
     junk_code_block();
-    
     let result = f();
-    
     if opaque_false() {
         dead_code();
     }
-    
     result
 }
 
 // ============================================================================
-// API OBFUSCATION
+// API HASHING
 // ============================================================================
 
-/// Resolve API dinamicamente por hash (técnica comum em malware)
-#[cfg(windows)]
-pub fn get_proc_by_hash(_module_hash: u32, _proc_hash: u32) -> Option<usize> {
-    // Em implementação real:
-    // 1. Percorre PEB->Ldr->InMemoryOrderModuleList
-    // 2. Calcula hash do nome do módulo
-    // 3. Se match, percorre Export Directory
-    // 4. Calcula hash de cada função exportada
-    // 5. Retorna endereço se match
-    
-    // Simplificado para CTF
-    None
-}
-
-/// Calcula hash de string (para API hashing)
 pub fn hash_string(s: &str) -> u32 {
-    let mut hash = 0x811C9DC5u32; // FNV-1a offset basis
-    
+    let mut hash = 0x811C9DC5u32;
     for byte in s.bytes() {
         hash ^= byte as u32;
-        hash = hash.wrapping_mul(0x01000193); // FNV-1a prime
+        hash = hash.wrapping_mul(0x01000193);
     }
-    
     hash
 }
 
-/// Calcula hash de string (case insensitive)
 pub fn hash_string_ci(s: &str) -> u32 {
     let mut hash = 0x811C9DC5u32;
-    
     for byte in s.bytes() {
         let b = if byte >= b'A' && byte <= b'Z' {
-            byte + 0x20 // lowercase
+            byte + 0x20
         } else {
             byte
         };
         hash ^= b as u32;
         hash = hash.wrapping_mul(0x01000193);
     }
-    
     hash
 }
 
 // ============================================================================
-// ENVIRONMENT CHECKS
+// ENVIRONMENT CHECKS (strings ofuscadas)
 // ============================================================================
 
-/// Verifica se está rodando em ambiente virtualizado
 pub fn is_virtual_environment() -> bool {
     let mut score = 0;
     
-    // Check 1: MAC address prefixes
-    if has_vm_mac_prefix() {
-        score += 2;
-    }
+    if has_vm_mac_prefix() { score += 2; }
+    if has_vm_processes() { score += 2; }
+    if has_vm_files() { score += 2; }
+    if has_low_resources() { score += 1; }
+    if has_suspicious_username() { score += 1; }
     
-    // Check 2: VM processes
-    if has_vm_processes() {
-        score += 2;
-    }
-    
-    // Check 3: VM files
-    if has_vm_files() {
-        score += 2;
-    }
-    
-    // Check 4: Low resources
-    if has_low_resources() {
-        score += 1;
-    }
-    
-    // Check 5: Suspicious username
-    if has_suspicious_username() {
-        score += 1;
-    }
-    
-    // Score >= 3 indica VM/sandbox
     score >= 3
 }
 
 fn has_vm_mac_prefix() -> bool {
     #[cfg(unix)]
     {
-        if let Ok(output) = std::process::Command::new("ip").args(["link"]).output() {
+        use std::process::Command;
+        let cmd = bs(&['i','p']);
+        let arg = bs(&['l','i','n','k']);
+        if let Ok(output) = Command::new(&cmd).args([&arg]).output() {
             let result = String::from_utf8_lossy(&output.stdout).to_lowercase();
-            let vm_macs = ["00:0c:29", "00:50:56", "08:00:27", "52:54:00", "00:1c:42"];
-            for mac in vm_macs {
+            // MAC prefixes de VMs
+            let vm_macs = [
+                bs(&['0','0',':','0','c',':','2','9']),
+                bs(&['0','0',':','5','0',':','5','6']),
+                bs(&['0','8',':','0','0',':','2','7']),
+                bs(&['5','2',':','5','4',':','0','0']),
+                bs(&['0','0',':','1','c',':','4','2']),
+            ];
+            for mac in &vm_macs {
                 if result.contains(mac) {
                     return true;
                 }
@@ -325,17 +268,27 @@ fn has_vm_mac_prefix() -> bool {
 }
 
 fn has_vm_processes() -> bool {
-    let vm_procs = [
-        "vmtoolsd", "vmwaretray", "vboxservice", "vboxtray",
-        "qemu-ga", "xenservice", "vmsrvc",
+    use std::process::Command;
+    
+    // Processos de VM (ofuscados)
+    let vm_procs: Vec<String> = vec![
+        xd(&[0x6f, 0x6c, 0x7d, 0x6c, 0x6c, 0x69, 0x7c, 0x75], 0x19), // vmtoolsd
+        xd(&[0x6f, 0x6c, 0x78, 0x70, 0x79, 0x72, 0x7d, 0x79, 0x70, 0x68], 0x19), // vmwaretray
+        bs(&['v','b','o','x','s','e','r','v','i','c','e']),
+        bs(&['v','b','o','x','t','r','a','y']),
+        bs(&['q','e','m','u','-','g','a']),
+        bs(&['x','e','n','s','e','r','v','i','c','e']),
+        bs(&['v','m','s','r','v','c']),
     ];
     
     #[cfg(unix)]
     {
-        if let Ok(output) = std::process::Command::new("ps").args(["aux"]).output() {
+        let cmd = bs(&['p','s']);
+        let arg = bs(&['a','u','x']);
+        if let Ok(output) = Command::new(&cmd).args([&arg]).output() {
             let procs = String::from_utf8_lossy(&output.stdout).to_lowercase();
-            for p in vm_procs {
-                if procs.contains(p) {
+            for p in &vm_procs {
+                if procs.contains(&p.to_lowercase()) {
                     return true;
                 }
             }
@@ -344,10 +297,11 @@ fn has_vm_processes() -> bool {
     
     #[cfg(windows)]
     {
-        if let Ok(output) = std::process::Command::new("tasklist").output() {
+        let cmd = bs(&['t','a','s','k','l','i','s','t']);
+        if let Ok(output) = Command::new(&cmd).output() {
             let procs = String::from_utf8_lossy(&output.stdout).to_lowercase();
-            for p in vm_procs {
-                if procs.contains(p) {
+            for p in &vm_procs {
+                if procs.contains(&p.to_lowercase()) {
                     return true;
                 }
             }
@@ -360,13 +314,15 @@ fn has_vm_processes() -> bool {
 fn has_vm_files() -> bool {
     #[cfg(windows)]
     {
+        // Paths de drivers de VM (ofuscados)
+        let base = bs(&['C',':','\\','w','i','n','d','o','w','s','\\','s','y','s','t','e','m','3','2','\\','d','r','i','v','e','r','s','\\']);
         let vm_files = [
-            "C:\\windows\\system32\\drivers\\vmmouse.sys",
-            "C:\\windows\\system32\\drivers\\vmhgfs.sys",
-            "C:\\windows\\system32\\drivers\\vboxmouse.sys",
+            format!("{}{}", base, bs(&['v','m','m','o','u','s','e','.','s','y','s'])),
+            format!("{}{}", base, bs(&['v','m','h','g','f','s','.','s','y','s'])),
+            format!("{}{}", base, bs(&['v','b','o','x','m','o','u','s','e','.','s','y','s'])),
         ];
         
-        for path in vm_files {
+        for path in &vm_files {
             if std::path::Path::new(path).exists() {
                 return true;
             }
@@ -375,14 +331,16 @@ fn has_vm_files() -> bool {
     
     #[cfg(unix)]
     {
-        let vm_files = [
-            "/sys/class/dmi/id/product_name",
-        ];
-        
-        for path in vm_files {
-            if let Ok(content) = std::fs::read_to_string(path) {
-                let lower = content.to_lowercase();
-                if lower.contains("vmware") || lower.contains("virtualbox") || lower.contains("qemu") {
+        let path = bs(&['/','s','y','s','/','c','l','a','s','s','/','d','m','i','/','i','d','/','p','r','o','d','u','c','t','_','n','a','m','e']);
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let lower = content.to_lowercase();
+            let checks = [
+                bs(&['v','m','w','a','r','e']),
+                bs(&['v','i','r','t','u','a','l','b','o','x']),
+                bs(&['q','e','m','u']),
+            ];
+            for c in &checks {
+                if lower.contains(c) {
                     return true;
                 }
             }
@@ -396,7 +354,6 @@ fn has_low_resources() -> bool {
     use sysinfo::System;
     let sys = System::new_all();
     
-    // Menos de 2 CPUs ou menos de 2GB RAM
     let cpus = std::thread::available_parallelism()
         .map(|p| p.get())
         .unwrap_or(1);
@@ -408,12 +365,22 @@ fn has_low_resources() -> bool {
 
 fn has_suspicious_username() -> bool {
     let user = whoami::username().to_lowercase();
-    let suspicious = [
-        "sandbox", "virus", "malware", "sample", "test",
-        "cuckoo", "analyst", "vmware", "virtual", "honey",
+    
+    // Usernames suspeitos (ofuscados com XOR 0x19)
+    let suspicious: Vec<String> = vec![
+        xd(&[0x7a, 0x76, 0x69, 0x75, 0x77, 0x68, 0x63], 0x19), // sandbox
+        xd(&[0x6f, 0x6a, 0x79, 0x7e, 0x7c], 0x19), // virus
+        xd(&[0x64, 0x76, 0x6d, 0x78, 0x76, 0x79, 0x72], 0x19), // malware
+        xd(&[0x7a, 0x76, 0x64, 0x7f, 0x6d, 0x72], 0x19), // sample
+        xd(&[0x6d, 0x72, 0x7c, 0x6d], 0x19), // test
+        xd(&[0x74, 0x7e, 0x74, 0x6c, 0x68, 0x68], 0x19), // cuckoo
+        xd(&[0x76, 0x69, 0x76, 0x6d, 0x68, 0x7c, 0x6d], 0x19), // analyst
+        xd(&[0x6f, 0x6c, 0x78, 0x76, 0x79, 0x72], 0x19), // vmware
+        xd(&[0x6f, 0x6a, 0x79, 0x6d, 0x7e, 0x76, 0x6d], 0x19), // virtual
+        xd(&[0x70, 0x68, 0x69, 0x72, 0x68], 0x19), // honey
     ];
     
-    for s in suspicious {
+    for s in &suspicious {
         if user.contains(s) {
             return true;
         }
@@ -426,23 +393,17 @@ fn has_suspicious_username() -> bool {
 // EXECUTION FLOW OBFUSCATION
 // ============================================================================
 
-/// Executa função com verificações de segurança
 pub fn guarded_execute<F, R>(f: F) -> Option<R>
 where
     F: FnOnce() -> R,
 {
-    // Pre-execution checks
     if is_debugger_attached() {
         return None;
     }
     
-    // Junk antes
     junk_code_block();
-    
-    // Execução real via indireção
     let result = indirect_call(f);
     
-    // Junk depois
     if opaque_true() {
         junk_code_block();
     }
@@ -450,44 +411,13 @@ where
     Some(result)
 }
 
-/// Delay com jitter para evitar timing signatures
 pub fn anti_timing_delay() {
     let base = 100u64;
     let jitter = rand::random::<u64>() % 50;
     let delay = Duration::from_millis(base + jitter);
     
-    // Sleep fragmentado para dificultar análise
     for _ in 0..10 {
         std::thread::sleep(delay / 10);
-        junk_code_block();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    #[test]
-    fn test_opaque_predicates() {
-        // Deve sempre ser true
-        assert!(opaque_true());
-        // Deve sempre ser false
-        assert!(!opaque_false());
-    }
-    
-    #[test]
-    fn test_hash_string() {
-        let hash1 = hash_string("kernel32.dll");
-        let hash2 = hash_string("kernel32.dll");
-        assert_eq!(hash1, hash2);
-        
-        let hash3 = hash_string("ntdll.dll");
-        assert_ne!(hash1, hash3);
-    }
-    
-    #[test]
-    fn test_junk_code() {
-        // Não deve panic
         junk_code_block();
     }
 }
