@@ -900,6 +900,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
 
 [[package]]
+name = "litcrypt"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f82f92066d9d41b3a569b459b7874e67feb835507a83b7bd142ea9f56c620c7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
 name = "litemap"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -976,6 +986,8 @@ dependencies = [
  "dirs",
  "goldberg",
  "hex",
+ "lazy_static",
+ "litcrypt",
  "nix",
  "obfstr",
  "rand",

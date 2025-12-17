@@ -76,6 +76,12 @@ goldberg = "0.1"
 # Obfstr - Runtime string obfuscation
 obfstr = "0.4"
 
+# Litcrypt - Compile-time string encryption
+litcrypt = "0.3"
+
+# Lazy static for delayed initialization
+lazy_static = "1.4"
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.52", features = [
     "Win32_Foundation",
@@ -103,6 +109,11 @@ codegen-units = 1
 panic = "abort"
 strip = true
 opt-level = "z"
+# Adicional para ofuscação
+debug = false
+debug-assertions = false
+overflow-checks = false
+incremental = false
 
 [profile.dev]
 debug = true

