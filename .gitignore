@@ -1,0 +1,51 @@
+# Rust
+/target/
+Cargo.lock
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Lab Environment
+/output/
+/lab_environment/exfil_data/
+/lab_environment/logs/
+/lab_environment/captures/
+/lab_environment/target_data/
+
+# Secrets (nunca commitar!)
+*.pem
+*.key
+*.env
+.env.local
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Temporary
+/tmp/
+*.tmp
+*.temp
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.Python
+venv/
+.venv/
+
+# Docker volumes
+docker-volumes/
+

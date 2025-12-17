@@ -1,0 +1,24 @@
+# Mock C2 Server for MyStealer CTF Lab
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Instalar dependências
+RUN pip install --no-cache-install flask flask-cors gunicorn
+
+# Criar estrutura
+RUN mkdir -p /app/data /app/logs
+
+# Copiar código do servidor
+COPY c2_server.py /app/
+
+# Expor portas
+EXPOSE 8080 8443
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8080/health || exit 1
+
+# Executar
+CMD ["python", "c2_server.py"]
+

@@ -1,0 +1,15 @@
+[package]
+name = "mystealer-detector"
+version = "0.1.0"
+edition = "2021"
+description = "Detector for MyStealer CTF Lab - Educational defense tool"
+
+[dependencies]
+sysinfo = "0.30"
+notify = "6.1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tokio = { version = "1.35", features = ["full"] }
+regex = "1.10"
+walkdir = "2.4"
+

@@ -1,0 +1,129 @@
+version: '3.8'
+
+# MyStealer CTF Lab - Docker Environment
+# Execute: docker-compose up -d
+
+services:
+  # ============================================
+  # Mock C2 Server - Servidor de Controle Simulado
+  # ============================================
+  mock-c2:
+    build:
+      context: .
+      dockerfile: Dockerfile.c2
+    container_name: mystealer-c2
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    volumes:
+      - ./exfil_data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - FLASK_ENV=development
+      - LOG_LEVEL=DEBUG
+    networks:
+      lab-network:
+        ipv4_address: 172.28.1.10
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # Rust Build Environment
+  # ============================================
+  rust-builder:
+    image: rust:1.75-bookworm
+    container_name: mystealer-builder
+    volumes:
+      - ../:/app
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/app/target
+    working_dir: /app
+    command: ["cargo", "build", "--release", "--features", "lab-mode"]
+    networks:
+      - lab-network
+
+  # ============================================
+  # Linux Target Machine
+  # ============================================
+  linux-target:
+    image: ubuntu:22.04
+    container_name: mystealer-linux-target
+    volumes:
+      - ../target/release:/malware:ro
+      - ./target_data:/home/testuser
+    environment:
+      - MYSTEALER_LAB_MODE=1
+    networks:
+      lab-network:
+        ipv4_address: 172.28.1.20
+    tty: true
+    stdin_open: true
+    command: ["/bin/bash", "-c", "useradd -m testuser && touch /tmp/.mystealer_lab && tail -f /dev/null"]
+    depends_on:
+      - mock-c2
+
+  # ============================================
+  # DNS Server (para exfiltração DNS)
+  # ============================================
+  dns-server:
+    image: coredns/coredns:latest
+    container_name: mystealer-dns
+    volumes:
+      - ./dns/Corefile:/Corefile:ro
+      - ./dns/zones:/zones:ro
+    ports:
+      - "5353:53/udp"
+      - "5353:53/tcp"
+    networks:
+      lab-network:
+        ipv4_address: 172.28.1.30
+    command: ["-conf", "/Corefile"]
+
+  # ============================================
+  # Monitoring - Wireshark/tcpdump
+  # ============================================
+  network-monitor:
+    image: nicolaka/netshoot
+    container_name: mystealer-monitor
+    network_mode: "host"
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ./captures:/captures
+    command: ["tail", "-f", "/dev/null"]
+
+  # ============================================
+  # Log Aggregator
+  # ============================================
+  log-viewer:
+    image: datalust/seq:latest
+    container_name: mystealer-logs
+    ports:
+      - "5341:5341"
+      - "8081:80"
+    environment:
+      - ACCEPT_EULA=Y
+    volumes:
+      - seq-data:/data
+    networks:
+      lab-network:
+        ipv4_address: 172.28.1.40
+
+networks:
+  lab-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
+
+volumes:
+  cargo-cache:
+  target-cache:
+  seq-data:
+
