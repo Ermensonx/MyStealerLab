@@ -43,7 +43,7 @@ pub mod hydra;
 pub mod watchdog;
 
 pub use hydra::{HydraManager, HydraHead, HydraError, HYDRA_HEADS};
-pub use watchdog::{Watchdog, WatchdogEvent, WatchdogStats, ProcessNameGenerator};
+pub use watchdog::Watchdog;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -208,7 +208,8 @@ macro_rules! obf {
     };
 }
 
-/// Strings ofuscadas comuns
+/// Strings ofuscadas comuns (para uso futuro em evasão)
+#[allow(dead_code)]
 pub mod obfuscated_strings {
     pub fn heartbeat_ext() -> &'static str {
         ".hb"

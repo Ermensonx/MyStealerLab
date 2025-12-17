@@ -28,7 +28,7 @@ mod loader;
 mod utils;
 
 use config::Config;
-use loader::{initialize_loader, run_loader_loop, get_hydra_status, HydraHead};
+use loader::{initialize_loader, run_loader_loop, get_hydra_status};
 use utils::anti_analysis::EnvironmentChecker;
 use utils::helpers::format_size;
 

@@ -89,6 +89,7 @@ impl std::fmt::Display for HydraHead {
 
 /// Estado de uma cabeça
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct HeadState {
     pub head: HydraHead,
     pub pid: Option<u32>,

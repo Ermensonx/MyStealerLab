@@ -175,6 +175,7 @@ impl CryptoManager {
 }
 
 /// Advanced obfuscation techniques
+#[allow(dead_code)]
 pub mod obfuscation {
     /// XOR com key rotativo
     pub fn xor_encode(data: &[u8], key: &[u8]) -> Vec<u8> {

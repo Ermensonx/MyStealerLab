@@ -5,6 +5,8 @@
 //!
 //! ⚠️ EDUCATIONAL PURPOSES ONLY - CTF IR Training
 
+#![allow(dead_code)]
+
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 use tracing::{debug, info};
