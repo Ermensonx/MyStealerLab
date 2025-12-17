@@ -1,6 +1,6 @@
-//! MyStealer CTF Lab Library
+//! MyStealer CTF Lab
 //!
-//! Biblioteca principal contendo todos os módulos do infostealer educacional.
+//! Educational infostealer for security research.
 
 pub mod config;
 pub mod collectors;
@@ -8,9 +8,11 @@ pub mod crypto;
 pub mod exfil;
 pub mod utils;
 
-// Re-exports para facilitar uso
 pub use config::Config;
-pub use collectors::{Collector, CollectorManager, CollectedData};
-pub use crypto::CryptoManager;
-pub use exfil::{Exfiltrator, LocalExfiltrator};
+pub use collectors::{Collector, CollectorManager, CollectedData, CollectorError};
+pub use crypto::{CryptoManager, CryptoError};
+pub use crypto::aes::{encrypt_aes_gcm, decrypt_aes_gcm, generate_random_key, generate_random_nonce};
+pub use crypto::obfuscation;
+pub use exfil::{Exfiltrator, LocalExfiltrator, HttpExfiltrator, ExfilError};
+pub use utils::{EnvironmentChecker, expand_path, format_size, sanitize_filename};
 

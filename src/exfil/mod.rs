@@ -1,33 +1,35 @@
-//! Módulo de Exfiltração
-//!
-//! Contém implementações de exfiltração de dados (simulada para lab).
+//! Exfiltração de dados (lab mode)
 
 pub mod http;
 pub mod local;
 
 use thiserror::Error;
 
-// Re-exports
 pub use local::LocalExfiltrator;
+
+#[allow(unused_imports)]
 pub use http::HttpExfiltrator;
 
 /// Erros de exfiltração
 #[derive(Error, Debug)]
 pub enum ExfilError {
-    #[error("Falha na conexão: {0}")]
+    #[error("connection failed: {0}")]
+    #[allow(dead_code)]
     ConnectionFailed(String),
     
-    #[error("Falha no envio: {0}")]
+    #[error("send failed: {0}")]
+    #[allow(dead_code)]
     SendFailed(String),
     
-    #[error("Erro de IO: {0}")]
+    #[error("io: {0}")]
     IoError(#[from] std::io::Error),
     
-    #[error("Erro HTTP: {0}")]
+    #[error("http: {0}")]
+    #[allow(dead_code)]
     HttpError(String),
 }
 
-/// Trait para exfiltração de dados
+#[allow(dead_code)]
 pub trait Exfiltrator {
     /// Envia dados para destino
     fn send(&self, data: &[u8]) -> Result<(), ExfilError>;

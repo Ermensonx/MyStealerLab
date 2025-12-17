@@ -3,6 +3,9 @@
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
+#[cfg(unix)]
+use nix::unistd::geteuid;
+
 use super::{Collector, CollectorError, ModuleData};
 
 /// Dados do sistema coletados
@@ -60,8 +63,8 @@ impl SystemInfoCollector {
         // Coletar processos
         let processes: Vec<String> = sys.processes()
             .values()
-            .map(|p| p.name().to_string_lossy().to_string())
-            .take(100) // Limitar para não ficar muito grande
+            .map(|p| p.name().to_string())
+            .take(100) // Limitar pra nao ficar gigante
             .collect();
         
         // Informação da CPU
@@ -98,8 +101,7 @@ impl SystemInfoCollector {
     
     #[cfg(unix)]
     fn check_admin() -> bool {
-        // Verificar se é root no Unix
-        unsafe { libc::geteuid() == 0 }
+        geteuid().is_root()
     }
 }
 

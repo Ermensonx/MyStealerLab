@@ -1,6 +1,8 @@
-//! Funções Auxiliares
+//! Helper functions
 
 use std::path::PathBuf;
+
+#[allow(dead_code)]
 
 /// Expande variáveis de ambiente em caminhos
 pub fn expand_path(path: &str) -> PathBuf {
@@ -37,7 +39,8 @@ pub fn expand_path(path: &str) -> PathBuf {
     PathBuf::from(expanded)
 }
 
-/// Formata tamanho em bytes para formato legível
+/// Format bytes to human readable
+#[allow(dead_code)]
 pub fn format_size(bytes: u64) -> String {
     const KB: u64 = 1024;
     const MB: u64 = KB * 1024;
@@ -54,17 +57,17 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
-/// Gera ID único para sessão
+#[allow(dead_code)]
 pub fn generate_session_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
-/// Obtém timestamp atual em formato ISO
+#[allow(dead_code)]
 pub fn current_timestamp() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
-/// Sanitiza string para uso em nome de arquivo
+#[allow(dead_code)]
 pub fn sanitize_filename(name: &str) -> String {
     name.chars()
         .map(|c| {

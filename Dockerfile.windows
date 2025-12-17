@@ -1,0 +1,24 @@
+# Cross-compile para Windows
+FROM rust:latest
+
+WORKDIR /app
+
+# Instalar deps pra cross-compile
+RUN apt-get update && apt-get install -y \
+    gcc-mingw-w64-x86-64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Adicionar target Windows
+RUN rustup target add x86_64-pc-windows-gnu
+
+# Configurar linker pro Windows
+RUN mkdir -p /.cargo && \
+    echo '[target.x86_64-pc-windows-gnu]' >> /.cargo/config.toml && \
+    echo 'linker = "x86_64-w64-mingw32-gcc"' >> /.cargo/config.toml
+
+COPY . .
+
+# Build pra Windows
+RUN cargo build --release --target x86_64-pc-windows-gnu
+
+CMD ["cp", "-r", "/app/target/x86_64-pc-windows-gnu/release/", "/output/"]

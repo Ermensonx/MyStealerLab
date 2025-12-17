@@ -1,96 +1,158 @@
 # 🔬 MyStealer CTF Lab
 
-> **⚠️ AVISO IMPORTANTE**: Este projeto é **EXCLUSIVAMENTE PARA FINS EDUCACIONAIS** em ambientes controlados de laboratório. O uso indevido de técnicas de infostealer é **ILEGAL** e pode resultar em sérias consequências legais. Use apenas em máquinas virtuais e ambientes isolados de sua propriedade.
+> **⚠️ EDUCATIONAL PURPOSES ONLY** - Este projeto é exclusivamente para aprendizado em ambientes isolados. Uso indevido é **ILEGAL**.
 
-## 📋 Visão Geral
+## Overview
 
-Este laboratório de CTF foi desenvolvido para ensinar os fundamentos de:
-- Programação em Rust para segurança ofensiva
-- Técnicas de coleta de informações em sistemas Windows/Linux
-- Análise de malware e engenharia reversa
-- Desenvolvimento de contramedidas defensivas
+Lab de CTF para estudo de técnicas de infostealers em Rust. Baseado em práticas do [Rust-for-Malware-Development](https://github.com/Whitecat18/Rust-for-Malware-Development).
 
-## 🎯 Objetivos Educacionais
+### Features
 
-1. Compreender como infostealers funcionam internamente
-2. Aprender técnicas de programação segura em Rust
-3. Desenvolver habilidades de análise de malware
-4. Criar ferramentas de detecção e prevenção
+- **System Info**: hostname, user, OS, CPU, RAM, processos
+- **Browser Data**: cookies, history, login data (Chrome, Firefox, Brave, Edge)
+- **File Scanner**: busca arquivos sensíveis (.env, id_rsa, passwords.txt, etc)
+- **Clipboard**: captura conteúdo atual
+- **Anti-Analysis**: detecção de VM, sandbox, debugger
+- **Crypto**: AES-256-GCM + XOR obfuscation
 
-## 🏗️ Arquitetura do Projeto
+## Quick Start
+
+### Linux
+```bash
+# Build
+cargo build --release
+
+# Run (lab mode)
+./target/release/mystealer --output-dir ./output
+
+# Com verificações desabilitadas
+./target/release/mystealer --skip-checks
+```
+
+### Windows (cross-compile)
+```bash
+# Build via Docker
+docker build -f Dockerfile.windows -t mystealer-win .
+docker run --rm -v $(pwd)/output:/output mystealer-win \
+    sh -c "cp /app/target/x86_64-pc-windows-gnu/release/mystealer.exe /output/"
+
+# Executar na VM Windows
+mystealer.exe --skip-checks --output-dir .\output
+```
+
+### Docker (teste isolado)
+```bash
+docker build -f Dockerfile.test -t mystealer-test .
+docker run --rm -v $(pwd)/output:/app/output mystealer-test
+```
+
+## Estrutura
 
 ```
 mysteellerCTF/
-├── docs/                    # Documentação completa
-│   ├── ARCHITECTURE.md      # Arquitetura técnica
-│   ├── MODULES.md           # Descrição dos módulos
-│   ├── SETUP.md             # Configuração do ambiente
-│   └── TECHNIQUES.md        # Técnicas utilizadas
-├── src/                     # Código fonte
+├── src/
 │   ├── main.rs              # Entry point
-│   ├── lib.rs               # Biblioteca principal
+│   ├── lib.rs               # Library exports
+│   ├── config.rs            # Configuração
 │   ├── collectors/          # Módulos de coleta
-│   ├── crypto/              # Criptografia
-│   ├── exfil/               # Exfiltração (simulada)
-│   └── utils/               # Utilitários
-├── lab_environment/         # Ambiente de laboratório
-│   ├── docker-compose.yml   # Infra do lab
-│   └── vm_setup/            # Scripts de VMs
-├── defenses/                # Ferramentas de defesa
-│   └── detector/            # Detector de comportamento
+│   │   ├── browser.rs       # Chrome, Firefox, etc (SQLite)
+│   │   ├── clipboard.rs     # Área de transferência
+│   │   ├── files.rs         # Scanner de arquivos sensíveis
+│   │   └── system_info.rs   # Info do sistema
+│   ├── crypto/
+│   │   ├── mod.rs           # AES-256-GCM + Argon2
+│   │   └── aes.rs           # Funções auxiliares
+│   ├── exfil/
+│   │   ├── http.rs          # Exfil via HTTP
+│   │   └── local.rs         # Salvar local
+│   └── utils/
+│       ├── anti_analysis.rs # VM/Sandbox/Debugger detection
+│       └── helpers.rs       # Funções auxiliares
 ├── challenges/              # Desafios CTF
-├── Cargo.toml               # Dependências Rust
-└── README.md
+├── defenses/                # Detector de comportamento
+├── lab_environment/         # Docker compose + C2 mock
+├── Dockerfile.test          # Build + test Linux
+├── Dockerfile.windows       # Cross-compile Windows
+└── output/                  # Dados coletados
 ```
 
-## 🛠️ Stack Tecnológico
+## Módulos
 
-- **Linguagem**: Rust 1.75+
-- **SO Alvo**: Windows 10/11 (principal), Linux (secundário)
-- **Ambiente Lab**: Docker, VirtualBox/VMware
-- **Ferramentas**: Cargo, Clippy, LLVM
+| Módulo | Descrição |
+|--------|-----------|
+| `system` | Hostname, user, OS, CPU, RAM, processos |
+| `browser` | Cookies, history, passwords (Chrome/Firefox/Brave/Edge) |
+| `clipboard` | Conteúdo da área de transferência |
+| `files` | Arquivos sensíveis (.env, keys, passwords, wallets) |
 
-## 🚀 Quick Start
+## Anti-Analysis
 
-```bash
-# Clone o repositório
-git clone <repo-url>
-cd mysteellerCTF
+- **VM Detection**: DMI, MAC address, processos, CPUID
+- **Sandbox Detection**: usernames típicos, uptime baixo, poucos processos
+- **Debugger Detection**: TracerPid (Linux), IsDebuggerPresent (Windows)
+- **Timing Check**: detecta single-stepping/emulação
 
-# Configure o ambiente de lab (ver docs/SETUP.md)
-./scripts/setup_lab.sh
+## Output
 
-# Compile o projeto
-cargo build --release
-
-# Execute em ambiente controlado APENAS
-./target/release/mystealer --lab-mode
+```json
+{
+  "timestamp": "2025-12-17T21:38:14Z",
+  "session_id": "524c7173-a404-4496-ac95-9c17bbe842ff",
+  "modules": {
+    "system": { "hostname": "...", "username": "...", ... },
+    "browser": { "browsers_found": ["Chrome", "Firefox"], ... },
+    "files": { "found_files": [{ "path": "/root/.ssh/id_rsa", ... }] },
+    "clipboard": { "current_text": "..." }
+  }
+}
 ```
 
-## 📚 Documentação
+Dados são criptografados com AES-256-GCM (chave derivada do machine-id).
 
-| Documento | Descrição |
-|-----------|-----------|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Arquitetura técnica detalhada |
-| [MODULES.md](docs/MODULES.md) | Descrição de cada módulo |
-| [SETUP.md](docs/SETUP.md) | Configuração do ambiente |
-| [TECHNIQUES.md](docs/TECHNIQUES.md) | Técnicas e TTPs utilizados |
+## CLI Options
 
-## ⚖️ Disclaimer Legal
+```
+Usage: mystealer [OPTIONS]
 
-Este software é fornecido **"como está"** apenas para fins educacionais e de pesquisa em segurança da informação. Os autores não se responsabilizam por qualquer uso indevido ou ilegal deste código.
+Options:
+      --lab-mode                 Modo laboratório (default: true)
+  -l, --log-level <LEVEL>        trace|debug|info|warn|error [default: info]
+  -o, --output-dir <DIR>         Diretório de saída [default: ./output]
+  -m, --modules <MODULES>        Módulos separados por vírgula [default: system,browser,clipboard,files]
+      --skip-checks              Pular verificações de ambiente
+  -h, --help                     Ajuda
+  -V, --version                  Versão
+```
 
-**Ao usar este projeto, você concorda que:**
-- Utilizará apenas em ambientes controlados de sua propriedade
+## Challenges
+
+| Challenge | Descrição | Pontos |
+|-----------|-----------|--------|
+| [CHALLENGE_01](challenges/CHALLENGE_01.md) | Análise estática básica | 40 |
+| [CHALLENGE_02](challenges/CHALLENGE_02.md) | Análise dinâmica | 60 |
+| [CHALLENGE_03](challenges/CHALLENGE_03.md) | Criptografia | 80 |
+| [CHALLENGE_04](challenges/CHALLENGE_04.md) | Evasion | 100 |
+
+## Tech Stack
+
+- **Rust 1.92+**
+- **rusqlite** - Browser SQLite
+- **aes-gcm** - Criptografia
+- **sysinfo** - System info
+- **tokio** - Async runtime
+- **tracing** - Logging
+
+## Legal
+
+Este software é fornecido "como está" apenas para fins educacionais. 
+
+**Ao usar, você concorda que:**
+- Usará apenas em ambientes controlados de sua propriedade
 - Não usará para atividades maliciosas ou ilegais
 - Compreende as leis locais sobre segurança cibernética
-- Assume total responsabilidade pelo uso do código
 
-## 📝 Licença
-
-MIT License - Apenas para fins educacionais.
+**MIT License** - Educational purposes only.
 
 ---
 
-*Desenvolvido para fins de aprendizado em segurança cibernética* 🛡️
-
+*Built for security research and education* 🛡️

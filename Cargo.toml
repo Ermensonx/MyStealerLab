@@ -58,6 +58,9 @@ walkdir = "2.4"
 sha2 = "0.10"
 hex = "0.4"
 
+# SQLite (browser data)
+rusqlite = { version = "0.31", features = ["bundled"] }
+
 # CLI
 clap = { version = "4.4", features = ["derive"] }
 

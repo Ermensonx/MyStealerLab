@@ -1,6 +1,4 @@
-//! Módulo de Coletores
-//!
-//! Este módulo contém a interface e implementações dos coletores de dados.
+//! Data collectors module
 
 pub mod system_info;
 pub mod browser;
@@ -13,28 +11,27 @@ use chrono::{DateTime, Utc};
 use thiserror::Error;
 use tracing::info;
 
-// Re-exports
 pub use system_info::SystemInfoCollector;
 pub use browser::BrowserCollector;
 pub use clipboard::ClipboardCollector;
 pub use files::FileCollector;
 
-/// Erros do coletor
 #[derive(Error, Debug)]
 pub enum CollectorError {
-    #[error("Módulo não suportado nesta plataforma: {0}")]
+    #[error("not supported: {0}")]
+    #[allow(dead_code)]
     NotSupported(String),
     
-    #[error("Falha ao coletar dados: {0}")]
+    #[error("collection failed: {0}")]
     CollectionFailed(String),
     
-    #[error("Erro de IO: {0}")]
+    #[error("io: {0}")]
     IoError(#[from] std::io::Error),
     
-    #[error("Erro de serialização: {0}")]
+    #[error("json: {0}")]
     SerializationError(#[from] serde_json::Error),
     
-    #[error("Módulo desconhecido: {0}")]
+    #[error("unknown module: {0}")]
     UnknownModule(String),
 }
 

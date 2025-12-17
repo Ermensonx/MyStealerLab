@@ -1,6 +1,4 @@
-//! Implementações adicionais de AES
-//!
-//! Funções auxiliares para criptografia AES.
+//! Additional AES implementations
 
 use aes_gcm::{
     aead::{Aead, KeyInit},
@@ -9,7 +7,7 @@ use aes_gcm::{
 
 use super::CryptoError;
 
-/// Criptografa dados com chave e nonce específicos
+#[allow(dead_code)]
 pub fn encrypt_aes_gcm(
     key: &[u8; 32],
     nonce: &[u8; 12],
@@ -24,7 +22,7 @@ pub fn encrypt_aes_gcm(
         .map_err(|e| CryptoError::EncryptionFailed(e.to_string()))
 }
 
-/// Descriptografa dados com chave e nonce específicos
+#[allow(dead_code)]
 pub fn decrypt_aes_gcm(
     key: &[u8; 32],
     nonce: &[u8; 12],
@@ -39,14 +37,14 @@ pub fn decrypt_aes_gcm(
         .map_err(|e| CryptoError::DecryptionFailed(e.to_string()))
 }
 
-/// Gera chave aleatória de 256 bits
+#[allow(dead_code)]
 pub fn generate_random_key() -> [u8; 32] {
     let mut key = [0u8; 32];
     rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut key);
     key
 }
 
-/// Gera nonce aleatório de 96 bits
+#[allow(dead_code)]
 pub fn generate_random_nonce() -> [u8; 12] {
     let mut nonce = [0u8; 12];
     rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut nonce);

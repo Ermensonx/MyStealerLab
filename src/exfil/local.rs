@@ -39,7 +39,7 @@ impl LocalExfiltrator {
         Ok(filepath.to_string_lossy().to_string())
     }
     
-    /// Salva dados em formato legível (JSON)
+    #[allow(dead_code)]
     pub fn save_readable(&self, json_data: &str) -> Result<String, ExfilError> {
         std::fs::create_dir_all(&self.output_dir)?;
         

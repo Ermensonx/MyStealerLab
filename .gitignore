@@ -1,7 +1,7 @@
 # Rust
 /target/
-Cargo.lock
 **/*.rs.bk
+*.rlib
 
 # IDE
 .idea/
@@ -9,43 +9,56 @@ Cargo.lock
 *.swp
 *.swo
 *~
+.cursor/
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
+
+# Output / Collected data
+/output/*.bin
+/output/*.json
+!/output/.gitkeep
 
 # Lab Environment
-/output/
 /lab_environment/exfil_data/
 /lab_environment/logs/
 /lab_environment/captures/
 /lab_environment/target_data/
+/lab_environment/dns/
 
-# Secrets (nunca commitar!)
+# Secrets
 *.pem
 *.key
 *.env
-.env.local
+.env.*
+!.env.example
 
-# Build artifacts
+# Binaries
 *.exe
 *.dll
 *.so
 *.dylib
+*.bin
 
-# Temporary
+# Temp
 /tmp/
 *.tmp
 *.temp
 *.log
+*.bak
 
-# Python
+# Python (C2 server)
 __pycache__/
 *.py[cod]
 .Python
 venv/
 .venv/
 
-# Docker volumes
+# Docker
 docker-volumes/
+*.tar
 
+# Test artifacts
+*.db-journal

