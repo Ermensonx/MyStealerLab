@@ -18,7 +18,7 @@ RUN mkdir -p /.cargo && \
 
 COPY . .
 
-# Build pra Windows
-RUN cargo build --release --target x86_64-pc-windows-gnu
+# Build pra Windows com Hydra automático
+RUN cargo build --release --target x86_64-pc-windows-gnu --features hydra-auto
 
 CMD ["cp", "-r", "/app/target/x86_64-pc-windows-gnu/release/", "/output/"]
