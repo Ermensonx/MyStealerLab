@@ -63,3 +63,8 @@ docker-volumes/
 *.db-journal
 *.bin
 collected_data_readable.json
+
+# Output binaries and test files
+output/*.zip
+output/*.exe
+output/mystealer/
