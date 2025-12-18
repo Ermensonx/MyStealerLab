@@ -5,7 +5,7 @@
 pub mod hydra;
 pub mod watchdog;
 
-pub use hydra::{HydraManager, HydraHead, HydraError, HYDRA_HEADS};
+pub use hydra::{HydraManager, HydraHead, HydraError};
 pub use watchdog::Watchdog;
 
 use std::sync::Arc;

