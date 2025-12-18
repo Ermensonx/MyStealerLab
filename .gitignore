@@ -21,12 +21,11 @@ Desktop.ini
 /output/*.json
 !/output/.gitkeep
 
-# Lab Environment
+# Lab Environment (runtime data)
 /lab_environment/exfil_data/
 /lab_environment/logs/
 /lab_environment/captures/
 /lab_environment/target_data/
-/lab_environment/dns/
 
 # Secrets
 *.pem

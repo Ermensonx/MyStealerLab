@@ -4,7 +4,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Instalar dependências
-RUN pip install --no-cache-install flask flask-cors gunicorn
+RUN pip install --no-cache-dir flask flask-cors gunicorn pycryptodome
 
 # Criar estrutura
 RUN mkdir -p /app/data /app/logs

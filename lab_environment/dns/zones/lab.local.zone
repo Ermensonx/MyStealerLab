@@ -1,0 +1,11 @@
+$ORIGIN lab.local.
+@       3600    IN      SOA     ns.lab.local. admin.lab.local. (
+                                2024010101
+                                3600
+                                1800
+                                604800
+                                86400 )
+@       3600    IN      NS      ns.lab.local.
+ns      3600    IN      A       172.28.1.30
+c2      3600    IN      A       172.28.1.10
+target  3600    IN      A       172.28.1.20
