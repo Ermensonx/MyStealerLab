@@ -61,3 +61,5 @@ docker-volumes/
 
 # Test artifacts
 *.db-journal
+*.bin
+collected_data_readable.json
