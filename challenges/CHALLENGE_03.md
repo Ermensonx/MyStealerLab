@@ -1,5 +1,21 @@
 # 🎯 Desafio 03: Engenharia Reversa
 
+**Dificuldade**: ⭐⭐⭐ Difícil  
+**Pontos**: 100  
+**Versão**: v0.3.1 (Stealth Edition)
+
+---
+
+## ⚠️ Nota sobre Ofuscação
+
+Na versão 0.3.1, strings estão ofuscadas. No entanto, a **criptografia** ainda pode ser identificada via:
+- Análise de bibliotecas linkadas
+- Padrões de bytecode (S-box AES)
+- Código fonte (se disponível)
+- Debugging dinâmico
+
+---
+
 ## Objetivo
 
 Faça engenharia reversa do binário para entender a criptografia usada.
@@ -19,12 +35,20 @@ Analise o código para identificar:
 3. Qual modo de operação?
 
 ```bash
-# Buscar símbolos relacionados a crypto
-nm target/release/mystealer | grep -i "aes\|encrypt\|gcm"
+# Buscar símbolos relacionados a crypto (pode estar stripped)
+nm target/release/mystealer 2>/dev/null | grep -i "aes\|encrypt\|gcm"
 
-# Ou no código fonte
-grep -r "Aes\|encrypt\|gcm" src/
+# Verificar bibliotecas linkadas
+ldd target/release/mystealer | grep -i "ssl\|crypto"
+
+# Buscar padrões de S-box AES no binário (sempre funciona!)
+xxd target/release/mystealer | grep -i "637c 777b"
+
+# Ou analisar o código fonte
+grep -r "Aes\|encrypt\|gcm\|Argon2" src/
 ```
+
+> **💡 Dica**: Mesmo com símbolos stripped, o padrão S-box do AES (`63 7c 77 7b f2 6b...`) é detectável no binário.
 
 **FLAG**: `CTF{algoritmo_bits_modo}`
 
