@@ -2,33 +2,43 @@
 
 **Dificuldade**: ⭐⭐⭐⭐ (Difícil)  
 **Pontos**: 100  
-**Categoria**: Reverse Engineering
+**Categoria**: Reverse Engineering  
+**Versão**: v0.3.1
 
 ---
 
 ## 📋 Briefing
 
-O malware MyStealer v0.3 utiliza técnicas avançadas de ofuscação de strings para evitar detecção por ferramentas de análise estática. Seu objetivo é reverter a ofuscação e extrair as strings sensíveis.
+O malware MyStealer v0.3.1 utiliza técnicas avançadas de ofuscação de strings para evitar detecção por ferramentas de análise estática. Nesta versão, TODAS as strings sensíveis são construídas em runtime usando a função `bs()` (build string).
+
+Seu objetivo é:
+1. Entender como a ofuscação funciona
+2. Reverter as técnicas e extrair as strings originais
+3. Identificar os padrões no binário
 
 ---
 
 ## 🎯 Objetivos
 
-1. **Identificar o método de ofuscação** (20 pontos)
-   - Qual técnica é usada para esconder strings?
-   - Quantas chaves XOR diferentes são utilizadas?
+### Parte 1: Identificar o Método (20 pontos)
+- Qual técnica principal é usada para esconder strings?
+- Encontre a função `bs()` no disassembly
+- Explique como `black_box()` previne otimizações
 
-2. **Extrair as strings de processos de VM** (30 pontos)
-   - Encontre os nomes dos processos que o malware procura
-   - Decodifique pelo menos 5 nomes
+### Parte 2: Extrair Nomes de Browsers (25 pontos)
+- Encontre os paths de browsers no código
+- Reconstrua pelo menos 3 paths completos
+- Identifique o padrão de construção
 
-3. **Extrair as strings de usernames suspeitos** (25 pontos)
-   - Quais usernames são considerados indicadores de sandbox?
-   - Decodifique a lista completa
+### Parte 3: Reverter Queries SQL (30 pontos)
+- Encontre as funções `build_*_query()`
+- Reconstrua a query de cookies completa
+- Identifique quantas queries diferentes existem
 
-4. **Reverter uma query SQL** (25 pontos)
-   - Encontre a função que constrói queries SQL
-   - Reconstrua a query completa de cookies
+### Parte 4: Serde Rename Analysis (25 pontos)
+- Analise o JSON de output
+- Mapeie os campos curtos para nomes reais
+- Crie uma tabela de mapeamento completa
 
 ---
 
@@ -36,163 +46,272 @@ O malware MyStealer v0.3 utiliza técnicas avançadas de ofuscação de strings 
 
 ```
 output/mystealer.exe     # Binário Windows ofuscado
+output/collected_*.bin   # Dados coletados (encrypted)
 ```
 
 ---
 
-## 🔍 Dicas
+## 🔍 Análise Inicial
 
-### Nível 1 (Básico)
-- Procure por padrões de XOR no disassembly
-- A instrução `XOR` com constante é um indicador
+### Verificando Strings
 
-### Nível 2 (Intermediário)
-- As chaves XOR são: `0x17`, `0x19`, `0x33`, `0x42`, `0x55`, `0x77`
-- Procure por funções que fazem iteração sobre arrays de bytes
+```bash
+# Antes (v0.2) - Muitas strings visíveis
+$ strings old_mystealer.exe | grep -iE "Chrome|Firefox" | wc -l
+47
 
-### Nível 3 (Avançado)
-- A função `xd()` ou similar decodifica strings XOR
-- A função `bs()` constrói strings caractere por caractere
-- Queries SQL são construídas com loops `for c in [...]`
+# Depois (v0.3.1) - Quase nenhuma
+$ strings mystealer.exe | grep -iE "Chrome|Firefox" | wc -l
+0
+```
+
+### O que mudou?
+
+Na v0.3.1, todas as strings são construídas assim:
+
+```rust
+// ❌ ANTES - Detectável
+let browser = "Chrome";
+
+// ✅ DEPOIS - Não detectável
+fn bs(chars: &[char]) -> String {
+    let mut s = String::with_capacity(chars.len());
+    for &c in chars { s.push(c); }
+    std::hint::black_box(s)
+}
+let browser = bs(&['C', 'h', 'r', 'o', 'm', 'e']);
+```
 
 ---
 
 ## 🧪 Exercícios Práticos
 
-### Exercício 1: Identificar XOR Decode
+### Exercício 1: Encontrar bs() no Disassembly
 
-```python
-# Decodifique esta string (key = 0x19):
-encoded = [0x7a, 0x76, 0x69, 0x75, 0x77, 0x68, 0x63]
+No IDA/Ghidra, procure por padrões como:
 
-def xor_decode(data, key):
-    return ''.join(chr(b ^ key) for b in data)
-
-result = xor_decode(encoded, 0x19)
-print(f"Decodificado: {result}")
+```asm
+; Loop de push de caracteres
+mov     eax, [rsp+...]    ; Carrega caractere
+call    String::push      ; Adiciona à string
+inc     rdi               ; Próximo caractere
+cmp     rdi, ...          ; Verifica fim
+jne     loop_start
 ```
 
-**Pergunta**: Qual é a string decodificada?
+**Dica**: Procure por chamadas repetidas a `String::push` com valores imediatos (caracteres ASCII).
 
-### Exercício 2: Encontrar Processos de VM
+### Exercício 2: Reconstruir Path de Browser
 
-```python
-# Estes bytes representam nomes de processos de VM (key = 0x19):
-vm_procs_encoded = [
-    [0x6f, 0x6c, 0x7d, 0x6c, 0x6c, 0x69, 0x7c, 0x75],  # ???
-    [0x6f, 0x6c, 0x78, 0x70, 0x79, 0x72, 0x7d, 0x79, 0x70, 0x68],  # ???
-]
+No binário, você verá algo assim:
 
-for proc in vm_procs_encoded:
-    print(xor_decode(proc, 0x19))
+```asm
+; Construindo ".config/google-chrome"
+mov byte ptr [rsp+0], 2Eh   ; '.'
+mov byte ptr [rsp+1], 63h   ; 'c'
+mov byte ptr [rsp+2], 6Fh   ; 'o'
+mov byte ptr [rsp+3], 6Eh   ; 'n'
+; ...
 ```
 
-### Exercício 3: Reconstruir Query SQL
+**Tarefa**: Encontre e reconstrua o path completo.
 
-No binário, a query de cookies é construída assim:
+### Exercício 3: Reverter Query SQL
+
+As queries são construídas assim:
 
 ```rust
 fn build_cookies_query() -> String {
     let mut q = String::new();
-    for c in ['S','E','L','E','C','T',' '] { q.push(c); }
-    for c in ['h','o','s','t','_','k','e','y',',',' '] { q.push(c); }
-    // ... continue
+    for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
+    for c in ['h', 'o', 's', 't', '_', 'k', 'e', 'y', ',', ' '] { q.push(c); }
+    // ...
 }
 ```
 
-**Tarefa**: Encontre a função no disassembly e reconstrua a query completa.
+**Tarefa**: Encontre a função e reconstrua a query completa.
+
+### Exercício 4: Mapeamento Serde
+
+Analise um arquivo de output e mapeie os campos:
+
+```json
+{
+  "t": "2024-12-17T21:00:00Z",   // ? → timestamp
+  "s": "abc123",                  // ? → session_id
+  "m": {
+    "b": {
+      "b": ["C", "F"],            // ? → browsers_found
+      "c": 42,                    // ? → total_cookies
+      "w": 5,                     // ? → total_passwords
+      "h": 100                    // ? → total_history
+    }
+  }
+}
+```
 
 ---
 
-## 🔓 Soluções (Spoiler)
+## 💡 Dicas
+
+### Nível 1 (Básico)
+- Procure por loops que fazem `push` de caracteres
+- Os caracteres são valores ASCII (0x41 = 'A', 0x61 = 'a', etc)
+
+### Nível 2 (Intermediário)
+- A função `bs()` sempre termina com `black_box()`
+- Procure por `std::hint::black_box` no binário
+
+### Nível 3 (Avançado)
+- Use um debugger para capturar strings em runtime
+- Coloque breakpoints após a construção de strings
+
+---
+
+## 🔓 Soluções
 
 <details>
-<summary>Clique para ver - Exercício 1</summary>
+<summary>Clique para ver - Path do Chrome (Linux)</summary>
 
-```python
-encoded = [0x7a, 0x76, 0x69, 0x75, 0x77, 0x68, 0x63]
-result = xor_decode(encoded, 0x19)
-# Resultado: "sandbox"
+```
+.config/google-chrome
+```
+
+Construído com:
+```rust
+home.join(bs(&['.', 'c', 'o', 'n', 'f', 'i', 'g', '/', 
+               'g', 'o', 'o', 'g', 'l', 'e', '-', 
+               'c', 'h', 'r', 'o', 'm', 'e']))
 ```
 
 </details>
 
 <details>
-<summary>Clique para ver - Exercício 2</summary>
-
-```python
-# Processo 1: vmtoolsd
-# Processo 2: vmwaretray
-```
-
-</details>
-
-<details>
-<summary>Clique para ver - Lista completa de usernames</summary>
-
-```
-sandbox, malware, virus, sample, test,
-john, user, admin, cuckoo, honey,
-analysis, analyst, vmuser
-```
-
-</details>
-
-<details>
-<summary>Clique para ver - Query SQL completa</summary>
+<summary>Clique para ver - Query de Cookies</summary>
 
 ```sql
-SELECT host_key, name, value, expires_utc, is_secure, is_httponly 
-FROM cookies LIMIT 100
+SELECT host_key, name, value, expires_utc, is_secure, is_httponly FROM cookies LIMIT 100
 ```
 
 </details>
 
----
+<details>
+<summary>Clique para ver - Mapeamento Serde Completo</summary>
 
-## 📊 Tabela de Chaves XOR
+**CollectedData:**
+| Campo JSON | Nome Original |
+|------------|---------------|
+| `t` | timestamp |
+| `s` | session_id |
+| `m` | modules |
+| `x` | metadata |
 
-| Key | Uso | Exemplos |
-|-----|-----|----------|
-| `0x17` | Paths de sistema | ".config", "Cookies", "History" |
-| `0x19` | Processos e usernames | "vmtoolsd", "sandbox", "analyst" |
-| `0x33` | Variáveis de ambiente | "HOME", "APPDATA" |
-| `0x42` | Nomes de browsers | "chromium", "firefox", "brave" |
-| `0x55` | Strings de crypto | "v10", "encrypted_key" |
-| `0x77` | Ferramentas de análise | "wireshark", "procmon", "x64dbg" |
+**BrowserData:**
+| Campo JSON | Nome Original |
+|------------|---------------|
+| `b` | browsers_found |
+| `p` | profiles |
+| `c` | total_cookies |
+| `w` | total_passwords |
+| `h` | total_history |
+
+**FileData:**
+| Campo JSON | Nome Original |
+|------------|---------------|
+| `d` | scanned_dirs |
+| `f` | found_files |
+| `ts` | total_scanned |
+| `tm` | total_matches |
+| `ms` | scan_duration_ms |
+
+</details>
 
 ---
 
 ## 🛠️ Ferramentas Recomendadas
 
-- **IDA Pro / Ghidra**: Análise estática
-- **x64dbg**: Debug dinâmico
-- **Python**: Scripts de decodificação
-- **CyberChef**: Operações XOR online
+| Ferramenta | Uso |
+|------------|-----|
+| **IDA Pro** | Análise estática, encontrar padrões |
+| **Ghidra** | Decompilação, análise de funções |
+| **x64dbg** | Debug dinâmico, capturar strings em runtime |
+| **Python** | Scripts para reconstruir strings |
+| **CyberChef** | Conversão ASCII/Hex |
 
 ---
 
-## 📝 Entrega
+## 📝 Script de Ajuda
 
-Submeta um relatório contendo:
+```python
+#!/usr/bin/env python3
+"""
+Script para reconstruir strings do MyStealer v0.3.1
+"""
 
-1. Lista de todas as chaves XOR encontradas
-2. Pelo menos 10 strings decodificadas
-3. Query SQL completa reconstruída
-4. Explicação do método de ofuscação usado
+def reconstruct_from_chars(char_list):
+    """Reconstrói string a partir de lista de caracteres"""
+    return ''.join(char_list)
+
+def hex_to_string(hex_bytes):
+    """Converte bytes hex para string"""
+    return bytes.fromhex(hex_bytes).decode('utf-8')
+
+# Exemplo: Path do Chrome
+chrome_chars = ['.', 'c', 'o', 'n', 'f', 'i', 'g', '/', 
+                'g', 'o', 'o', 'g', 'l', 'e', '-', 
+                'c', 'h', 'r', 'o', 'm', 'e']
+print(f"Chrome path: {reconstruct_from_chars(chrome_chars)}")
+
+# Exemplo: Query de cookies
+query_parts = [
+    ['S', 'E', 'L', 'E', 'C', 'T', ' '],
+    ['h', 'o', 's', 't', '_', 'k', 'e', 'y', ',', ' '],
+    ['n', 'a', 'm', 'e', ',', ' '],
+    ['v', 'a', 'l', 'u', 'e', ',', ' '],
+    ['e', 'x', 'p', 'i', 'r', 'e', 's', '_', 'u', 't', 'c', ',', ' '],
+    ['i', 's', '_', 's', 'e', 'c', 'u', 'r', 'e', ',', ' '],
+    ['i', 's', '_', 'h', 't', 't', 'p', 'o', 'n', 'l', 'y', ' '],
+    ['F', 'R', 'O', 'M', ' '],
+    ['c', 'o', 'o', 'k', 'i', 'e', 's', ' '],
+    ['L', 'I', 'M', 'I', 'T', ' ', '1', '0', '0'],
+]
+
+query = ''.join(reconstruct_from_chars(part) for part in query_parts)
+print(f"Cookie query: {query}")
+```
 
 ---
 
-## 🏆 Pontuação
+## 📊 Pontuação
 
 | Critério | Pontos |
 |----------|--------|
-| Identificar método de ofuscação | 20 |
-| Extrair 5+ processos de VM | 30 |
-| Extrair lista de usernames | 25 |
-| Reconstruir query SQL | 25 |
+| Identificar método `bs()` | 20 |
+| Reconstruir 3+ paths de browsers | 25 |
+| Reverter query SQL completa | 30 |
+| Mapeamento serde completo | 25 |
 | **Total** | **100** |
 
 ---
 
-*Challenge criado para treinamento de IR e Threat Hunting*
+## 🏆 Entrega
+
+Submeta um relatório contendo:
+
+1. **Explicação técnica** de como `bs()` funciona
+2. **Lista de paths** de browsers reconstruídos
+3. **Queries SQL** completas reconstruídas
+4. **Tabela de mapeamento** serde completa
+5. **Screenshots** do disassembly mostrando os padrões
+
+---
+
+## 📚 Referências
+
+- [Rust std::hint::black_box](https://doc.rust-lang.org/std/hint/fn.black_box.html)
+- [Anti-Static Analysis Techniques](https://attack.mitre.org/techniques/T1027/)
+- [Serde Rename Documentation](https://serde.rs/field-attrs.html)
+
+---
+
+*Challenge criado para treinamento de IR e Threat Hunting - v0.3.1* 🛡️

